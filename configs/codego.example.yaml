@@ -1,0 +1,21 @@
+# 仅用于复现历史 CodeGo 验证，不是产品默认配置。
+# 通用配置请使用根目录 config.example.yaml；此验证配置通过 CODEGO_API_KEY 提供密钥。
+# 使用 --config configs/codego.example.yaml；此文件不得写入凭据。
+# 工作区仍是调用 ylc 时的当前目录；仅 --workspace / -w 可以显式切换。
+provider: openai-compatible
+model: gpt-6-sol
+base-url: https://codegoai.com/v1
+api-key-env: CODEGO_API_KEY
+timeout-seconds: 60
+
+agent:
+  max-iterations: 8
+  parallel-reads: 1
+  context-budget-tokens: 12000
+  token-counter: utf16
+  max-tool-output-chars: 12000
+  max-output-tokens: 1000
+
+permissions:
+  allow-commands: false
+  allow-mcp-tools: false

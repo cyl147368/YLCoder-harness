@@ -1,0 +1,18 @@
+target/
+.idea/
+.vscode/
+*.iml
+.harness/
+__pycache__/
+*.log
+config.local.yaml
+
+# 本地协作计划和验收产物不进入公开仓库，公开历史只保留产品文件。
+/.core-audit-*
+/CLI_ACCEPTANCE_*.md
+/CORE_TEST_AUDIT_TASK.txt
+/LOCALIZATION_TEAM_TASKS.md
+/PROVIDER_REVIEW_*.txt
+/RESPONSES_ACCEPTANCE_TASK.md
+/WORKPLAN.md
+/WORKSPACE_SAFETY_*.txt

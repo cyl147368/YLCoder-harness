@@ -1,0 +1,30 @@
+# 通用配置模板；安装后编辑用户目录下的 .code-harness/config.yaml。
+# 工作区默认就是调用 ylc 时所在的目录；切换目录请使用 --workspace 或 -w。
+# 旧配置中的 workspace 字段保留解析兼容，但 CLI 忽略其值，无需填写。
+provider: openai-compatible
+model: YOUR_MODEL_ID
+base-url: https://your-provider.example/v1
+# 可直接填写自己的密钥；非空时无需环境变量。请勿提交或分享私有配置。
+api-key: ""
+api-key-env: HARNESS_API_KEY
+timeout-seconds: 120
+header-env: {}
+
+agent:
+  max-iterations: 30
+  parallel-reads: 1
+  context-budget-tokens: 48000
+  token-counter: utf16
+  max-tool-output-chars: 12000
+  max-output-tokens: 3000
+
+permissions:
+  # 默认让独立的无工具子 agent 审核有限的只读命令；其余操作仍需手动确认。
+  auto-review: true
+  review-timeout-seconds: 10
+  max-auto-reviews: 8
+  # 以下为全部预先放行；与低风险自动审核不同。
+  allow-commands: false
+  allow-mcp-tools: false
+mcp:
+  servers: {}

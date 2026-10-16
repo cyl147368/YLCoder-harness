@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+HARNESS_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+HARNESS_JAR="$HARNESS_DIR/lib/ylc.jar"
+if [ ! -f "$HARNESS_JAR" ]; then
+  printf '%s\n' '缺少 lib/ylc.jar；请解压完整的发行包。' >&2
+  exit 1
+fi
+if [ -n "${JAVA_HOME:-}" ]; then
+  HARNESS_JAVA="$JAVA_HOME/bin/java"
+else
+  HARNESS_JAVA=java
+fi
+exec "$HARNESS_JAVA" -jar "$HARNESS_JAR" "$@"
