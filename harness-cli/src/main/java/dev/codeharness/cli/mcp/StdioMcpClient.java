@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -27,13 +28,18 @@ final class StdioMcpClient implements AutoCloseable {
             .enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
             .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
     private static final Set<String> VERSIONS = Set.of("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05");
+    private static final long CLEANUP_NANOS = TimeUnit.SECONDS.toNanos(2);
     private final Process process;
+    private final Thread stdoutReader;
+    private final Thread stderrReader;
     private final int maxBytes;
     private final long timeoutSeconds;
     private final AtomicBoolean closed = new AtomicBoolean();
+    private final CountDownLatch cleanupFinished = new CountDownLatch(1);
     private final AtomicLong ids = new AtomicLong();
     private final Map<Long, CompletableFuture<JsonNode>> pending = new ConcurrentHashMap<>();
     private final Object writeLock = new Object();
+    private final Set<Thread> writers = ConcurrentHashMap.newKeySet();
 
     StdioMcpClient(Path workspace, HarnessConfig.McpServer config, int maxBytes) throws IOException, InterruptedException {
         this.maxBytes = maxBytes;
@@ -49,13 +55,15 @@ final class StdioMcpClient implements AutoCloseable {
         }
         try { process = builder.start(); }
         catch (IOException failure) { throw new IOException("无法启动配置的 MCP 服务端"); }
-        Thread.ofVirtual().name("mcp-stdout").start(this::readMessages);
-        Thread.ofVirtual().name("mcp-stderr").start(() -> {
+        stdoutReader = Thread.ofVirtual().name("mcp-stdout").unstarted(this::readMessages);
+        stderrReader = Thread.ofVirtual().name("mcp-stderr").unstarted(() -> {
             try (InputStream input = process.getErrorStream()) {
                 byte[] buffer = new byte[4096];
                 while (input.read(buffer) != -1) { /* 持续读取输出，但不记录可能包含秘密的服务端诊断。 */ }
             } catch (IOException ignored) { }
         });
+        stdoutReader.start();
+        stderrReader.start();
         try {
             JsonNode initialized = request("initialize", Map.of("protocolVersion", "2025-11-25",
                     "capabilities", Map.of(), "clientInfo", Map.of("name", "YLCoder-harness", "version", "0.1.0")));
@@ -77,10 +85,13 @@ final class StdioMcpClient implements AutoCloseable {
         pending.put(id, response);
         try {
             // 请求时限包括子进程 stdin 的背压等待。
-            Thread.ofVirtual().name("mcp-write").start(() -> {
+            Thread writer = Thread.ofVirtual().name("mcp-write").unstarted(() -> {
                 try { send(Map.of("jsonrpc", "2.0", "id", id, "method", method, "params", params)); }
                 catch (IOException | RuntimeException failure) { response.completeExceptionally(failure); }
+                finally { writers.remove(Thread.currentThread()); }
             });
+            writers.add(writer);
+            writer.start();
             JsonNode message = response.get(timeoutSeconds, TimeUnit.SECONDS);
             if (message.has("error")) throw new IOException("MCP 请求因 JSON-RPC 错误而失败");
             if (!message.has("result")) throw new IOException("MCP 响应缺少 result");
@@ -148,12 +159,27 @@ final class StdioMcpClient implements AutoCloseable {
     }
 
     @Override public void close() {
-        if (!closed.compareAndSet(false, true)) return;
-        pending.values().forEach(response -> response.completeExceptionally(new IOException("MCP 服务端已停止")));
-        stopProcess(process);
+        long deadline = System.nanoTime() + CLEANUP_NANOS;
+        if (!closed.compareAndSet(false, true)) {
+            // 读线程也可能率先检测到故障；外部 close 必须等同一次清理完成。
+            // 正在被关闭的读线程不能反过来等待关闭方，否则 join 会互相等待。
+            if (Thread.currentThread() != stdoutReader) await(cleanupFinished, deadline);
+            return;
+        }
+        try {
+            pending.values().forEach(response -> response.completeExceptionally(new IOException("MCP 服务端已停止")));
+            stopProcess(process, deadline);
+            join(stdoutReader, deadline);
+            join(stderrReader, deadline);
+            for (Thread writer : writers) join(writer, deadline);
+        } finally { cleanupFinished.countDown(); }
     }
 
     static void stopProcess(Process process) {
+        stopProcess(process, System.nanoTime() + CLEANUP_NANOS);
+    }
+
+    private static void stopProcess(Process process, long deadline) {
         // Windows 上的原生子孙进程枚举可能无限卡住。绝不将其放在
         // 请求或关闭处理路径上；直接终止必须独立于进程树发现。
         Thread.ofPlatform().daemon(true).name("mcp-descendant-cleanup").start(() -> {
@@ -163,12 +189,53 @@ final class StdioMcpClient implements AutoCloseable {
                 });
             } catch (RuntimeException ignored) { /* 外部子孙进程清理仅为尽力处理。 */ }
         });
-        try { process.destroyForcibly(); } catch (RuntimeException ignored) { }
-        // 关闭管道可能等待阻塞的写入监视器；不能因此延长请求时限。
-        Thread.ofPlatform().daemon(true).name("mcp-pipe-cleanup").start(() -> {
-            try { process.getOutputStream().close(); } catch (IOException ignored) { }
-            try { process.getInputStream().close(); } catch (IOException ignored) { }
-            try { process.getErrorStream().close(); } catch (IOException ignored) { }
+        // TerminateProcess 发出终止请求并不等于原生退出清理已经完成。
+        // 同一个有界时限内等待 waitFor，同时分别关闭管道，避免单个阻塞关闭拖住其它清理。
+        CountDownLatch completed = new CountDownLatch(5);
+        cleanup("mcp-terminate", completed, () -> process.destroyForcibly());
+        cleanup("mcp-exit-wait", completed, () -> {
+            long remaining = deadline - System.nanoTime();
+            if (remaining > 0) process.waitFor(remaining, TimeUnit.NANOSECONDS);
         });
+        cleanup("mcp-stdin-close", completed, () -> process.getOutputStream().close());
+        cleanup("mcp-stdout-close", completed, () -> process.getInputStream().close());
+        cleanup("mcp-stderr-close", completed, () -> process.getErrorStream().close());
+        await(completed, deadline);
+    }
+
+    @FunctionalInterface private interface Cleanup { void run() throws IOException, InterruptedException; }
+
+    private static void cleanup(String name, CountDownLatch completed, Cleanup operation) {
+        Thread.ofPlatform().daemon(true).name(name).start(() -> {
+            try { operation.run(); }
+            catch (IOException | InterruptedException | RuntimeException ignored) {
+                // 不回显外部进程诊断，也不让清理失败覆盖最初的协议或超时错误。
+            } finally { completed.countDown(); }
+        });
+    }
+
+    private static void await(CountDownLatch completed, long deadline) {
+        boolean interrupted = Thread.interrupted();
+        try {
+            while (completed.getCount() > 0) {
+                long remaining = deadline - System.nanoTime();
+                if (remaining <= 0) return;
+                try { if (completed.await(remaining, TimeUnit.NANOSECONDS)) return; }
+                catch (InterruptedException ignored) { interrupted = true; }
+            }
+        } finally { if (interrupted) Thread.currentThread().interrupt(); }
+    }
+
+    private static void join(Thread worker, long deadline) {
+        if (worker == Thread.currentThread()) return;
+        boolean interrupted = Thread.interrupted();
+        try {
+            while (worker.isAlive()) {
+                long remaining = deadline - System.nanoTime();
+                if (remaining <= 0) return;
+                try { TimeUnit.NANOSECONDS.timedJoin(worker, remaining); }
+                catch (InterruptedException ignored) { interrupted = true; }
+            }
+        } finally { if (interrupted) Thread.currentThread().interrupt(); }
     }
 }

@@ -48,6 +48,22 @@ class McpToolsTest {
         awaitStopped(pid);
     }
 
+    @Test void closeWaitsForProcessExitAndImmediatelyReleasesItsWorkingDirectory() throws Exception {
+        Path serverWorkspace = Files.createDirectory(workspace.resolve("mcp-workspace"));
+        long pid;
+        try (McpTools mcp = McpTools.open(serverWorkspace, config("normal", serverWorkspace), 1000, request -> true)) {
+            pid = Long.parseLong(Files.readString(serverWorkspace.resolve("pid.txt")));
+            assertTrue(ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false));
+        }
+        // close 返回本身就是同步点；这里不能轮询退出，也不能重试文件操作。
+        assertFalse(ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false), "close 返回时 MCP 进程必须已退出");
+        Path released = workspace.resolve("released-workspace");
+        Files.move(serverWorkspace, released);
+        Files.delete(released.resolve("pid.txt"));
+        Files.delete(released.resolve("trace.txt"));
+        Files.delete(released);
+    }
+
     @Test void deniesExternalCallsBeforeSendingAndBoundsToolOutput() throws Exception {
         try (McpTools mcp = McpTools.open(workspace, config("normal"), 128, request -> false)) {
             Tool tool = mcp.combine(ToolRegistry.empty()).find(McpTools.toolName("fixture", "echo.text")).orElseThrow();
@@ -124,6 +140,7 @@ class McpToolsTest {
     @Test void directTerminationDoesNotWaitForStalledNativeDescendantDiscovery() throws Exception {
         CountDownLatch enumerationStarted = new CountDownLatch(1);
         CountDownLatch releaseEnumeration = new CountDownLatch(1);
+        CountDownLatch enumerationFinished = new CountDownLatch(1);
         AtomicBoolean destroyed = new AtomicBoolean();
         Process stalled = new Process() {
             @Override public java.io.OutputStream getOutputStream() { return java.io.OutputStream.nullOutputStream(); }
@@ -137,6 +154,7 @@ class McpToolsTest {
                 enumerationStarted.countDown();
                 try { releaseEnumeration.await(); }
                 catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+                finally { enumerationFinished.countDown(); }
                 return java.util.stream.Stream.empty();
             }
         };
@@ -145,16 +163,56 @@ class McpToolsTest {
             assertTrue(destroyed.get(), "必须先终止直接进程，再完成清理");
             assertTrue(enumerationStarted.await(2, TimeUnit.SECONDS));
             assertEquals(1, releaseEnumeration.getCount(), "close 返回之后，发现操作仍处于阻塞状态");
-        } finally { releaseEnumeration.countDown(); }
+        } finally {
+            releaseEnumeration.countDown();
+            assertTrue(enumerationFinished.await(2, TimeUnit.SECONDS), "测试必须释放原生发现任务");
+        }
+    }
+
+    @Test void directTerminationWaitsForNativeExitAndClosesAllPipes() throws Exception {
+        ControlledProcess process = new ControlledProcess();
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var stopping = executor.submit(() -> StdioMcpClient.stopProcess(process));
+            try {
+                assertTrue(process.terminationRequested.await(1, TimeUnit.SECONDS), "必须请求终止直接进程");
+                assertTrue(process.exitWaitStarted.await(1, TimeUnit.SECONDS), "必须等待原生进程退出");
+                assertTrue(process.pipesClosed.await(1, TimeUnit.SECONDS), "等待退出期间必须独立关闭所有管道");
+                assertFalse(stopping.isDone(), "终止请求已发出但进程尚未退出时，清理不得提前返回");
+            } finally { process.releaseExit.countDown(); }
+            stopping.get(2, TimeUnit.SECONDS);
+            assertFalse(process.isAlive());
+        }
+    }
+
+    @Test void interruptedTerminationStillFinishesCleanupAndPreservesTheInterrupt() throws Exception {
+        ControlledProcess process = new ControlledProcess();
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var stopping = executor.submit(() -> {
+                Thread.currentThread().interrupt();
+                StdioMcpClient.stopProcess(process);
+                assertTrue(Thread.currentThread().isInterrupted(), "清理不得消耗调用方的中断状态");
+            });
+            try {
+                assertTrue(process.exitWaitStarted.await(1, TimeUnit.SECONDS), "调用方中断后也必须等待原生进程退出");
+                assertTrue(process.pipesClosed.await(1, TimeUnit.SECONDS));
+                assertFalse(stopping.isDone());
+            } finally { process.releaseExit.countDown(); }
+            stopping.get(2, TimeUnit.SECONDS);
+            assertFalse(process.isAlive());
+        }
     }
 
     private HarnessConfig.Mcp config(String mode) throws IOException {
+        return config(mode, workspace);
+    }
+
+    private HarnessConfig.Mcp config(String mode, Path serverWorkspace) throws IOException {
         // 每次启动都必须发布自己的就绪屏障，不能沿用之前的 PID。
-        Files.deleteIfExists(workspace.resolve("pid.txt"));
+        Files.deleteIfExists(serverWorkspace.resolve("pid.txt"));
         HarnessConfig.McpServer server = new HarnessConfig.McpServer();
         server.command = Path.of(System.getProperty("java.home"), "bin", System.getProperty("os.name").toLowerCase().contains("win") ? "java.exe" : "java").toString();
         server.args = List.of("-cp", System.getProperty("java.class.path"), Fixture.class.getName(), mode,
-                workspace.resolve("pid.txt").toString(), workspace.resolve("trace.txt").toString());
+                serverWorkspace.resolve("pid.txt").toString(), serverWorkspace.resolve("trace.txt").toString());
         server.timeoutSeconds = 5;
         HarnessConfig.Mcp config = new HarnessConfig.Mcp();
         config.servers = Map.of("fixture", server);
@@ -166,6 +224,43 @@ class McpToolsTest {
         long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
         while (ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false) && System.nanoTime() < until) Thread.sleep(10);
         assertFalse(ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false), "MCP 进程必须停止");
+    }
+
+    private static final class ControlledProcess extends Process {
+        private final CountDownLatch terminationRequested = new CountDownLatch(1);
+        private final CountDownLatch exitWaitStarted = new CountDownLatch(1);
+        private final CountDownLatch releaseExit = new CountDownLatch(1);
+        private final CountDownLatch pipesClosed = new CountDownLatch(3);
+        private final java.io.OutputStream stdin = new java.io.ByteArrayOutputStream() {
+            @Override public void close() { pipesClosed.countDown(); }
+        };
+        private final java.io.InputStream stdout = new java.io.ByteArrayInputStream(new byte[0]) {
+            @Override public void close() { pipesClosed.countDown(); }
+        };
+        private final java.io.InputStream stderr = new java.io.ByteArrayInputStream(new byte[0]) {
+            @Override public void close() { pipesClosed.countDown(); }
+        };
+
+        @Override public java.io.OutputStream getOutputStream() { return stdin; }
+        @Override public java.io.InputStream getInputStream() { return stdout; }
+        @Override public java.io.InputStream getErrorStream() { return stderr; }
+        @Override public int waitFor() throws InterruptedException {
+            exitWaitStarted.countDown();
+            releaseExit.await();
+            return 0;
+        }
+        @Override public boolean waitFor(long timeout, TimeUnit unit) throws InterruptedException {
+            exitWaitStarted.countDown();
+            return releaseExit.await(timeout, unit);
+        }
+        @Override public int exitValue() {
+            if (isAlive()) throw new IllegalThreadStateException("受控进程尚未退出");
+            return 0;
+        }
+        @Override public boolean isAlive() { return releaseExit.getCount() != 0; }
+        @Override public void destroy() { terminationRequested.countDown(); }
+        @Override public Process destroyForcibly() { destroy(); return this; }
+        @Override public java.util.stream.Stream<ProcessHandle> descendants() { return java.util.stream.Stream.empty(); }
     }
 
     public static final class Fixture {
