@@ -18,6 +18,7 @@ PROVIDER = 'openai-compatible'
 ENDPOINT_PATH = '/dashboard-endpoint-private-marker/v1'
 KEY_ENV = 'YLC_DASHBOARD_UNUSED_KEY'
 SAFE_COMMAND = 'dir /b' if os.name == 'nt' else 'pwd'
+PRIVATE_TASK = '只属于主任务的内容；保留 "带空格的文字" 和 C:\\中文目录\\space name\\file.txt。'
 MISSING = object()
 
 
@@ -73,6 +74,10 @@ class FixtureHandler(BaseHTTPRequestHandler):
             index = len(self.server.requests) - 1
             assert index < len(self.server.responses), '出现未预期的额外模型请求'
             response = self.server.responses[index]
+            if request.get('tools'):
+                tasks = [message['content'] for message in request['messages'] if message['role'] == 'user']
+                assert tasks and tasks == self.server.tasks[:len(tasks)], ('中文主任务或参数引用发生变化', tasks)
+                self.server.observed_tasks.update(tasks)
             if self.server.case == 'review-included' and index == 1:
                 assert not request.get('tools'), '审核子 agent 不应获得执行工具'
                 assert 1 <= request['max_tokens'] <= 96
@@ -151,15 +156,33 @@ def execute(launcher, workspace, case, responses, arguments, input_text=''):
         server.errors = []
         server.responses = responses
         server.case = case
-        launch = [str(Path(launcher).resolve())] if launcher else ['java', '-jar', str(JAR)]
-        common = launch + ['--config', str(config), '--provider', PROVIDER, '--model', MODEL,
+        server.tasks = arguments[arguments.index('run') + 1:] if 'run' in arguments else [
+            value for value in input_text.splitlines() if value and not value.startswith('/')]
+        server.observed_tasks = set()
+        launch = [str(Path(launcher).resolve())] if launcher else [
+            'java', '--disable-@files', '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8',
+            '-Dstderr.encoding=UTF-8', '-jar', str(JAR)]
+        common = ['--config', str(config), '--provider', PROVIDER, '--model', MODEL,
             '--base-url', f'http://127.0.0.1:{server.server_port}' + ENDPOINT_PATH,
             '--api-key-env', KEY_ENV, '--no-stream', '--no-color']
-        completed = subprocess.run(common + arguments, input=input_text, capture_output=True,
+        cli_arguments = common + arguments
+        if os.name == 'nt':
+            # Java 21 的 ACP 参数转换发生在 main 之前；让 Picocli 按 UTF-8 读原始参数。
+            argument_file = workspace / 'cli-arguments.txt'
+            argument_file.write_text('\n'.join(json.dumps(value, ensure_ascii=False) for value in cli_arguments) + '\n', encoding='utf-8')
+            cli_arguments = ['@' + argument_file.name]
+        completed = subprocess.run(launch + cli_arguments, input=input_text, capture_output=True,
             text=True, encoding='utf-8', env=environment, cwd=workspace, timeout=35)
     assert completed.returncode == 0, (case, completed.stdout, completed.stderr, server.errors)
     assert not server.errors, (case, server.errors)
     assert len(server.requests) == len(responses), (case, len(server.requests), len(responses))
+    assert server.observed_tasks == set(server.tasks), (case, server.observed_tasks, server.tasks)
+    sessions = list((workspace / '.harness/sessions').glob('*.json'))
+    assert sessions, '验收必须在实际中文工作区保存会话'
+    for path in sessions:
+        session = json.loads(path.read_text(encoding='utf-8'))
+        assert Path(session['workspace']).samefile(workspace), '会话工作区不能重定向或丢失中文'
+        assert [message['content'] for message in session['transcript'] if message['role'] == 'USER'] == server.tasks
     combined = completed.stdout + completed.stderr
     assert '\x1b[' not in combined, '纯文本模式出现 ANSI 控制序列'
     assert 'dashboard-endpoint-private-marker' not in combined, '端点标签泄漏了 URL 路径'
@@ -177,7 +200,7 @@ def verify_dashboard(launcher=None):
             workspace = base / ('工作区 ' + case)
             workspace.mkdir()
             completed, requests = execute(launcher, workspace, case, responses,
-                arguments if arguments is not None else ['--quiet', '--json', 'run', '只属于主任务的内容'], input_text)
+                arguments if arguments is not None else ['--quiet', '--json', 'run', PRIVATE_TASK], input_text)
             records.append({'case': case, 'localhostRequests': requests, 'status': 'PASS'})
             return completed
 

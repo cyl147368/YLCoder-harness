@@ -30,16 +30,38 @@ def redact(value, credential):
 
 
 def parse_cli_usage_summary(stderr):
-    """仅解析完整英文或中文单次调用汇总，保留 token 总数的原有边界。"""
+    """兼容旧双语单行与当前底栏，仅保留一次请求的明确 token 总数。"""
+    try:
+        text = stderr.decode('utf-8')
+    except UnicodeDecodeError:
+        return None
     patterns = (
-        rb'^Session: [A-Za-z0-9_-]+ \| [A-Z_]+ \| 1 calls \| ([0-9]+) tokens \| [0-9]+ ms\r?$',
-        r'^会话：[A-Za-z0-9_-]+ \| [A-Z_]+ \| 1 次调用 \| ([0-9]+) tokens \| [0-9]+ ms\r?$'.encode('utf-8'),
+        r'^Session: [A-Za-z0-9_-]+ \| [A-Z_]+ \| 1 calls \| ([0-9]+) tokens \| [0-9]+ ms\r?$',
+        r'^会话：[A-Za-z0-9_-]+ \| [A-Z_]+ \| 1 次调用 \| ([0-9]+) tokens \| [0-9]+ ms\r?$',
     )
-    for pattern in patterns:
-        summary = re.search(pattern, stderr, re.MULTILINE)
-        if summary:
-            return int(summary[1])
-    return None
+    legacy = [match for pattern in patterns for match in re.finditer(pattern, text, re.MULTILINE)]
+    compact = list(re.finditer(
+        r'^  ── 状态 · (?P<activity>已回复|本轮完成|达到调用上限|已取消|未完成) ──\r?\n'
+        r'  模型 [^\r\n]+ · 厂商 [^\r\n]+\r?\n'
+        r'  本轮  输入 token (?P<input>[^\r\n]+) · 输出 token (?P<output>[^\r\n]+)\r?\n'
+        r'  缓存 token [^\r\n]+ · 缓存命中率 [^\r\n]+\r?\n'
+        r'  (?P=activity) · (?P<main>[0-9]+)次主模型/(?P<review>[0-9]+)次审核 · '
+        r'(?P<tools>未调用工具|[0-9]+次工具) · [0-9]+\.[0-9] 秒'
+        r'(?: · 审核复用[0-9]+/人工[0-9]+)?\r?$', text, re.MULTILINE))
+    headers = len(re.findall(r'^  ── 状态 · ', text, re.MULTILINE))
+    if headers:
+        # 不从多个任务、部分状态或混合版本的输出中挑选一个看似完整的汇总。
+        if headers != 1 or len(compact) != 1 or legacy:
+            return None
+        summary = compact[0]
+        if (summary['main'], summary['review'], summary['tools']) != ('1', '0', '未调用工具'):
+            return None
+        number = r'(?:0|[1-9][0-9]*|[1-9][0-9]{0,2}(?:,[0-9]{3})+)'
+        values = [summary['input'], summary['output']]
+        if not all(re.fullmatch(number, value) for value in values):
+            return None  # “未报告”和“部分”均不能作为完整分项相加。
+        return sum(int(value.replace(',', '')) for value in values)
+    return int(legacy[0][1]) if len(legacy) == 1 else None
 
 
 def measure_sample(java, base_url, model, credential_env, streaming, timeout=90, on_first_visible=None):
@@ -167,12 +189,12 @@ def _measure_sample(java, base_url, model, credential_env, streaming, timeout, o
         except (OSError, ValueError, TypeError, AttributeError):
             errors.append('checkpoint_invalid')
             checks['completed'] = False
-        # 面向人的流式 CLI 汇总仅显示适配器归一化后的 token 总数。
-        # 不得从该总数编造输入、输出或缓存分项。
+        # 旧汇总直接提供总数；当前底栏仅在输入、输出均明确且恰好一次主请求时相加。
+        # 报告仍只保留总数，不从总数推断分项，也不把缓存重复加进总数。
         total_tokens = parse_cli_usage_summary(stderr)
         if total_tokens is not None:
             result['usage'] = {'totalTokens': total_tokens, 'inputTokens': None, 'outputTokens': None, 'cachedInputTokens': None}
-            result['usageAvailability'] = 'CLI combined adapter-normalized total only; components unavailable; zero may mean missing; not billing-verified'
+            result['usageAvailability'] = 'CLI adapter-normalized total only; components not retained; legacy zero may mean missing; not billing-verified'
         result['passed'] = child.returncode == 0 and not errors and all(checks.values())
         if errors:
             result['errorCategory'] = errors[0]

@@ -11,7 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_JAR = ROOT / 'harness-cli/target/harness-cli-0.1.0-SNAPSHOT-all.jar'
 JAR = SOURCE_JAR if SOURCE_JAR.is_file() else ROOT / 'lib/ylc.jar'
-PRIVATE_TASK = '只属于主智能体的任务内容，不应发送给审核子agent'
+PRIVATE_TASK = '只属于主智能体的任务内容，不应发送给审核子agent；保留 "带空格的文字" 和 C:\\中文目录\\space name\\file.txt。'
 SAFE_COMMAND = 'dir /b' if os.name == 'nt' else 'pwd'
 
 
@@ -44,6 +44,8 @@ def verify_review(launcher=None):
                         body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
                         review = not body.get('tools')
                         state['review' if review else 'main'].append(body)
+                        if not review:
+                            assert [m['content'] for m in body['messages'] if m['role'] == 'user'] == [PRIVATE_TASK], '中文主任务或参数引用发生变化'
                         if review:
                             assert body.get('stream') is not True
                             assert 1 <= body['max_tokens'] <= 96
@@ -93,8 +95,10 @@ def verify_review(launcher=None):
                 environment = os.environ.copy()
                 environment.pop('HARNESS_AUTO_REVIEW_UNUSED', None)
                 environment['DIRCMD'] = '/s'
-                launch = [str(Path(launcher).resolve())] if launcher else ['java', '-jar', str(JAR)]
-                arguments = launch + ['--config', str(config), '--workspace', str(workspace),
+                launch = [str(Path(launcher).resolve())] if launcher else [
+                    'java', '--disable-@files', '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8',
+                    '-Dstderr.encoding=UTF-8', '-jar', str(JAR)]
+                arguments = ['--config', str(config), '--workspace', str(workspace),
                     '--provider', 'openai-compatible', '--base-url', f'http://127.0.0.1:{server.server_port}/v1',
                     '--model', 'auto-review-fixture', '--api-key-env', 'HARNESS_AUTO_REVIEW_UNUSED',
                     '--no-stream', '--quiet', '--json']
@@ -102,8 +106,15 @@ def verify_review(launcher=None):
                     arguments.append('--no-auto-review')
                 if case == 'all-allowed':
                     arguments += ['--allow-commands', '--no-auto-review']
+                arguments += ['run', PRIVATE_TASK]
+                if os.name == 'nt':
+                    # Java 21 的原生 Windows 参数先经过 ACP；应用级参数文件保留中文。
+                    # 文件名保持相对 ASCII，内容仍覆盖真实中文路径、空格、引号和反斜线。
+                    argument_file = workspace / 'cli-arguments.txt'
+                    argument_file.write_text('\n'.join(json.dumps(value, ensure_ascii=False) for value in arguments) + '\n', encoding='utf-8')
+                    arguments = ['@' + argument_file.name]
                 try:
-                    run = subprocess.run(arguments + ['run', PRIVATE_TASK], input='', capture_output=True,
+                    run = subprocess.run(launch + arguments, input='', capture_output=True,
                         text=True, encoding='utf-8', env=environment, cwd=workspace, timeout=35)
                 finally:
                     server.shutdown()
@@ -128,6 +139,8 @@ def verify_review(launcher=None):
             assert result['usage']['outputTokens'] == 6 + (7 if known else 0)
             assert result['agentUsage']['inputTokens'] == 26 and result['agentUsage']['outputTokens'] == 6
             session = json.loads((workspace / '.harness/sessions' / (result['session'] + '.json')).read_text(encoding='utf-8'))
+            assert Path(session['workspace']).samefile(workspace), '会话必须使用实际中文工作区'
+            assert [m['content'] for m in session['transcript'] if m['role'] == 'USER'] == [PRIVATE_TASK]
             assert all(m.get('content') != '{"decision":"approve"}' for m in session['transcript'])
             records.append({'case': case, 'mainRequests': len(state['main']), 'reviewRequests': expected_reviews,
                             'review': review, 'status': 'PASS'})

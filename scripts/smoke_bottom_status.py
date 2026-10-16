@@ -281,7 +281,8 @@ def console_child(options):
                  'NO_COLOR', 'TERM', 'WT_SESSION', 'ANSICON', 'ConEmuANSI'):
         environment.pop(name, None)
     workspace = Path(options.workspace)
-    command = [str(options.launcher), '--config', str(workspace / 'offline.yaml'),
+    # 真实中文 cwd 由 Windows 宽字符进程 API 传递，避免在 Java 原生 argv 中重复传中文路径。
+    command = [str(options.launcher), '--config', 'offline.yaml',
                '--provider', 'openai-compatible', '--model', MODEL, '--base-url', options.base_url,
                '--api-key-env', 'YLC_BOTTOM_UNUSED', '--no-auto-review']
     if not options.streaming:
@@ -419,14 +420,26 @@ def verify_bottom_status(launcher=None, result_path=None, answer_lines=ANSWER_LI
         evidence = json.loads(output.read_text(encoding='utf-8')) if output.exists() else {
             'probeError': child.stderr.decode('utf-8', errors='replace')}
         approved = workspace / 'approved.txt'
+        checkpoints = list((workspace / '.harness/sessions').glob('*.json'))
+        saved_workspace, saved_users = None, []
+        if len(checkpoints) == 1:
+            state = json.loads(checkpoints[0].read_text(encoding='utf-8'))
+            saved_workspace = state['workspace']
+            saved_users = [message['content'] for message in state['transcript'] if message['role'] == 'USER']
         evidence.update({'launcher': str(launcher), 'localhostRequests': len(server.requests),
+                         'windowsACP': ctypes.windll.kernel32.GetACP(),
                          'providerErrors': server.errors,
+                         'workspace': str(workspace), 'savedWorkspace': saved_workspace,
+                         'savedUserMessages': saved_users,
                          'approvedCommandLines': approved.read_text(encoding='utf-8').splitlines() if approved.exists() else []})
         expected_requests = 1 if streaming else 3
         expected_approved = [] if streaming else ['bottom-approved']
+        expected_users = [FIRST] if streaming else [FIRST, SECOND]
         evidence['status'] = 'PASS' if (evidence.get('status') == 'PASS' and child.returncode == 0
             and not server.errors and len(server.requests) == expected_requests
-            and evidence['approvedCommandLines'] == expected_approved) else 'FAIL'
+            and evidence['approvedCommandLines'] == expected_approved
+            and saved_users == expected_users and saved_workspace is not None
+            and Path(saved_workspace).resolve() == workspace.resolve()) else 'FAIL'
         # 先写入项目 target，随后才删除夹具；清理失败不能遮蔽实际的屏幕/进程错误。
         write_json(result_path, evidence)
     except Exception as failure:

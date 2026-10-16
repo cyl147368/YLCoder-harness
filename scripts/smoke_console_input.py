@@ -114,7 +114,8 @@ def console_child(options):
     environment = os.environ.copy()
     for name in ('JAVA_TOOL_OPTIONS', '_JAVA_OPTIONS', 'JDK_JAVA_OPTIONS', 'YLC_CONSOLE_UNUSED'):
         environment.pop(name, None)
-    command = [options.launcher, '--config', str(Path(options.workspace) / 'offline.yaml'),
+    # JVM 启动前的 Windows ACP 可能损坏中文 argv；cwd 仍保留真实中文路径。
+    command = [options.launcher, '--config', 'offline.yaml',
                '--provider', 'openai-compatible', '--model', 'console-unicode-fixture',
                '--base-url', options.base_url, '--api-key-env', 'YLC_CONSOLE_UNUSED', '--no-stream']
     process = subprocess.Popen(command, cwd=options.workspace, env=environment, stdin=inp, stdout=out, stderr=out)
@@ -215,18 +216,23 @@ def main():
             evidence = json.loads(output.read_text(encoding='utf-8')) if output.exists() else {'probeError': child.stderr.decode('utf-8', errors='replace')}
             user_rows = [[row['content'] for row in request['messages'] if row['role'] == 'user'] for request in server.requests]
             checkpoints = list((workspace / '.harness/sessions').glob('*.json'))
-            saved_users = []
+            saved_users, saved_workspace = [], None
             if len(checkpoints) == 1:
-                saved_users = [row['content'] for row in json.loads(checkpoints[0].read_text(encoding='utf-8'))['transcript'] if row['role'] == 'USER']
+                state = json.loads(checkpoints[0].read_text(encoding='utf-8'))
+                saved_workspace = state['workspace']
+                saved_users = [row['content'] for row in state['transcript'] if row['role'] == 'USER']
             approved = (workspace / 'approved.txt').read_text(encoding='utf-8').splitlines() if (workspace / 'approved.txt').exists() else []
             evidence.update({'providerRequests': len(server.requests), 'wireUserMessages': user_rows,
                              'savedUserMessages': saved_users, 'providerErrors': server.errors,
+                             'workspace': str(workspace), 'savedWorkspace': saved_workspace,
                              'approvedCommandLines': approved})
             evidence['passed'] = (child.returncode == 0 and evidence.get('exitCode') == 0 and not server.errors
                                   and user_rows == [[FIRST], [FIRST], [FIRST, SECOND], [FIRST, SECOND], [FIRST, SECOND, THIRD]]
-                                  and saved_users == [FIRST, SECOND, THIRD] and approved == ['console-approved'])
+                                  and saved_users == [FIRST, SECOND, THIRD] and approved == ['console-approved']
+                                  and saved_workspace is not None and Path(saved_workspace).resolve() == workspace.resolve())
             results.append(evidence)
     report = {'status': 'PASS' if all(row['passed'] for row in results) else 'FAIL', 'launcher': str(options.launcher),
+              'windowsACP': ctypes.windll.kernel32.GetACP(),
               'scope': '隐藏的真实 Windows 控制台；WriteConsoleInputW Unicode 键盘事件；localhost 厂商；不模拟物理中文输入法',
               'checks': results}
     options.result.parent.mkdir(parents=True, exist_ok=True)

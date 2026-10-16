@@ -14,12 +14,26 @@ from measure_latency import PHRASE, measure_sample, parse_cli_usage_summary, red
 
 
 def check_usage_summaries():
-    """无 Java、无网络的双语汇总解析边界对照。"""
+    """无 Java、无网络的双语旧汇总与当前四行底栏边界对照。"""
     english = 'Session: fixture-1 | COMPLETED | 1 calls | 15 tokens | 2 ms'
     chinese = '会话：fixture-1 | COMPLETED | 1 次调用 | 15 tokens | 2 ms'
+    compact = '\n'.join([
+        '  ── 状态 · 已回复 ──',
+        '  模型 latency-local-fixture · 厂商 127.0.0.1',
+        '  本轮  输入 token 12 · 输出 token 3',
+        '  缓存 token 6 · 缓存命中率 50.0%',
+        '  已回复 · 1次主模型/0次审核 · 未调用工具 · 0.2 秒',
+    ])
     positives = [(line + ending, 15) for line in (english, chinese) for ending in ('', '\n', '\r\n')]
     positives += [(line.replace('15 tokens', '0 tokens'), 0) for line in (english, chinese)]
     positives += [('其他输出\n' + chinese + '\n尾部输出', 15)]
+    positives += [(compact + ending, 15) for ending in ('', '\n', '\r\n')]
+    positives += [(compact.replace('\n', '\r\n'), 15),
+                  ('其他输出\n' + compact + '\n  继续：ylc resume fixture-1\n', 15),
+                  (compact.replace('输入 token 12', '输入 token 0').replace('输出 token 3', '输出 token 0'), 0),
+                  (compact.replace('输入 token 12', '输入 token 1,234').replace('输出 token 3', '输出 token 56,789'), 58023),
+                  (compact.replace('缓存 token 6', '缓存 token —（未报告）')
+                          .replace('50.0%', '—（缓存用量未报告）'), 15)]
     for text, expected in positives:
         assert parse_cli_usage_summary(text.encode('utf-8')) == expected, text
     negatives = [
@@ -30,10 +44,31 @@ def check_usage_summaries():
         english.replace('15 tokens', '15.5 tokens'), chinese.replace('15 tokens', 'unknown tokens'),
         english.replace('COMPLETED', 'completed'), chinese.replace('fixture-1', 'fixture/1'),
         ' ' + english, chinese + ' extra', chinese.replace('2 ms', '-2 ms'),
+        english + '\n' + chinese,
+        compact + '\n' + compact,
+        compact + '\n' + english,
+        compact.replace('1次主模型/0次审核', '2次主模型/0次审核'),
+        compact.replace('1次主模型/0次审核', '0次主模型/0次审核'),
+        compact.replace('1次主模型/0次审核', '1次主模型/1次审核'),
+        compact.replace('未调用工具', '1次工具'),
+        compact.replace('输入 token 12', '输入 token —（未报告）'),
+        compact.replace('输出 token 3', '输出 token —（未报告）'),
+        compact.replace('输入 token 12', '输入 token 12（部分）'),
+        compact.replace('输出 token 3', '输出 token 3（部分）'),
+        compact.replace('输入 token 12', '输入 token -12'),
+        compact.replace('输出 token 3', '输出 token 3.5'),
+        compact.replace('输入 token 12', '输入 token 1,23'),
+        compact.replace('输出 token 3', '输出 token 0,003'),
+        compact.replace('输入 token 12', '输入 token １２'),
+        compact.replace('  模型 latency-local-fixture · 厂商 127.0.0.1\n', ''),
+        compact.replace('  缓存 token 6 · 缓存命中率 50.0%\n', ''),
+        compact.replace('  已回复 · 1次主模型', '  未完成 · 1次主模型'),
+        compact + ' extra',
     ]
     for text in negatives:
         assert parse_cli_usage_summary(text.encode('utf-8')) is None, text
-    return {'positive': len(positives), 'negative': len(negatives), 'languages': ['en', 'zh']}
+    return {'positive': len(positives), 'negative': len(negatives), 'languages': ['en', 'zh'],
+            'formats': ['legacy-single-line', 'compact-four-row-status']}
 
 
 class Fixture:
@@ -85,9 +120,13 @@ class Fixture:
                                 'id': 'forbidden-mutation', 'type': 'function', 'function': {'name': 'write_file',
                                 'arguments': json.dumps({'path': 'must-not-exist.txt', 'content': 'mutation'})}}]}
                             finish = 'tool_calls'
-                        response = (b'{malformed' if fixture.mode == 'malformed' else
-                                    json.dumps({'choices': [{'message': message, 'finish_reason': finish}],
-                                                'usage': {'prompt_tokens': 12, 'completion_tokens': 3}}).encode())
+                        payload = {'choices': [{'message': message, 'finish_reason': finish}]}
+                        if fixture.mode != 'missing':
+                            payload['usage'] = ({'prompt_tokens': 0, 'completion_tokens': 0}
+                                                if fixture.mode == 'zero' else {'prompt_tokens': 12})
+                            if fixture.mode not in ('zero', 'partial'):
+                                payload['usage']['completion_tokens'] = 3
+                        response = b'{malformed' if fixture.mode == 'malformed' else json.dumps(payload).encode()
                         self.send_response(200)
                         self.send_header('Content-Type', 'application/json')
                         self.send_header('Content-Length', str(len(response)))
@@ -110,7 +149,7 @@ def main():
     rows = []
     os.environ[variable] = artificial
     try:
-        for mode in ('early', 'sync', 'unfinished', 'malformed', 'tool'):
+        for mode in ('early', 'sync', 'zero', 'missing', 'partial', 'unfinished', 'malformed', 'tool'):
             fixture = Fixture(mode, artificial)
             visible = threading.Event()
             with ThreadingHTTPServer(('127.0.0.1', 0), fixture.handler()) as server:
@@ -128,11 +167,14 @@ def main():
                     assert not fixture.errors, '夹具协议检查失败'
                     assert fixture.requests == 1, 'Unexpected retry'
                     assert row['checks']['workspaceAllowlist'], '单次迭代探测中出现意外修改'
-                    if mode in ('early', 'sync'):
+                    if mode in ('early', 'sync', 'zero', 'missing', 'partial'):
                         assert row['passed'], '有效响应未通过验收'
                         assert row['firstVisibleTextMs'] is not None
                         assert 0 < row['firstVisibleTextMs'] <= row['processCompletionMs']
-                        assert row['usage']['totalTokens'] == 15
+                        if mode in ('missing', 'partial'):
+                            assert row['usage'] is None and row['usageAvailability'] == 'unavailable'
+                        else:
+                            assert row['usage']['totalTokens'] == (0 if mode == 'zero' else 15)
                     else:
                         assert not row['passed'], '不完整或工具响应被错误地判为通过'
                     if mode == 'tool':
@@ -143,6 +185,7 @@ def main():
                                  'firstVisibleTextMs': row['firstVisibleTextMs'],
                                  'processCompletionMs': row['processCompletionMs'],
                                  'errorCategory': row['errorCategory'], 'requests': fixture.requests,
+                                 'usage': row['usage'], 'usageAvailability': row['usageAvailability'],
                                  'workspaceAllowlist': row['checks']['workspaceAllowlist']})
                 finally:
                     fixture.release.set()

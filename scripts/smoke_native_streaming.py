@@ -126,6 +126,7 @@ def result(process, prefix=''):
 def check_early(common, scenario, environment):
     process = start(common + ['run', '回复原生测试短语。'], environment)
     first = []
+    errors = []
     arrived = threading.Event()
 
     def read_first():
@@ -139,7 +140,10 @@ def check_early(common, scenario, environment):
             arrived.set()
 
     reader = threading.Thread(target=read_first, daemon=True)
+    # 提前排空 stderr，防止状态输出填满管道而阻塞仍在读取 stdout 的测试。
+    error_reader = threading.Thread(target=lambda: errors.append(process.stderr.read()), daemon=True)
     reader.start()
+    error_reader.start()
     try:
         assert arrived.wait(8), '服务保持完成事件期间没有 stdout'
         assert first and first[0] == '原', first
@@ -147,14 +151,19 @@ def check_early(common, scenario, environment):
         scenario.release.set()
         process.wait(timeout=20)
         reader.join(2)
-        assert not reader.is_alive(), '进程退出后 stdout 读取器未结束'
-        stdout, stderr = ''.join(first), process.stderr.read()
+        error_reader.join(2)
+        assert not reader.is_alive() and not error_reader.is_alive(), '进程退出后输出读取器未结束'
+        stdout, stderr = ''.join(first), ''.join(errors)
         assert process.returncode == 0, (stdout, stderr)
         assert stdout.count('原生流已验证。') == 1, stdout
         assert len(scenario.requests) == 1, scenario.requests
     finally:
         scenario.release.set()
-        stop(process)
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=5)
+        reader.join(2)
+        error_reader.join(2)
 
 
 def check_json(common, scenario, environment):

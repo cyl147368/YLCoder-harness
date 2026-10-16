@@ -53,30 +53,42 @@ def main():
                 process = subprocess.Popen(common + ['run', '回复测试短语。'],
                                            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                            text=True, encoding='utf-8')
-                first = []
+                output = []
+                errors = []
                 arrived = threading.Event()
 
-                def read_first():
-                    first.append(process.stdout.read(1))
-                    arrived.set()
+                def read_stdout():
+                    # 从首字符直到 EOF 都使用同一个 TextIO 读取器，保留预读缓冲中的文本。
+                    while True:
+                        value = process.stdout.read(1)
+                        if not value:
+                            return
+                        output.append(value)
+                        arrived.set()
 
-                reader = threading.Thread(target=read_first, daemon=True)
+                reader = threading.Thread(target=read_stdout, daemon=True)
+                error_reader = threading.Thread(target=lambda: errors.append(process.stderr.read()), daemon=True)
                 reader.start()
+                error_reader.start()
                 try:
                     assert arrived.wait(5), '保持完成期间没有输出'
-                    assert first == ['S'], first
+                    assert output and output[0] == 'S', output
                     assert process.poll() is None, 'SSE 完成事件之前进程已完成'
                     release.set()
+                    process.wait(timeout=15)
                     reader.join(2)
-                    stdout, stderr = process.communicate(timeout=15)
-                    stdout = ''.join(first) + stdout
+                    error_reader.join(2)
+                    assert not reader.is_alive() and not error_reader.is_alive(), '进程退出后输出读取器未结束'
+                    stdout, stderr = ''.join(output), ''.join(errors)
                     assert process.returncode == 0, (stdout, stderr)
                     assert stdout.count('Stream verified.') == 1, stdout
                 finally:
                     release.set()
                     if process.poll() is None:
                         process.kill()
-                        process.communicate(timeout=5)
+                        process.wait(timeout=5)
+                    reader.join(2)
+                    error_reader.join(2)
                 result = subprocess.run(common + ['--json', 'run', '回复测试短语。'],
                                         capture_output=True, text=True, encoding='utf-8', timeout=15)
                 assert result.returncode == 0, (result.stdout, result.stderr)

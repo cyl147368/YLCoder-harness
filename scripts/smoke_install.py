@@ -1,5 +1,6 @@
 """通过 PATH 从独立工作区验证用户安装，不改真实用户 PATH/配置，仅请求 localhost。"""
 import argparse
+import ctypes
 import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -12,7 +13,7 @@ import threading
 
 
 ROOT = Path(__file__).resolve().parents[1]
-TASK = '跨目录 中文任务：写入并检查文件'
+TASK = '跨目录 中文任务：写入并检查文件，保留 "带空格的文字" 和 C:\\中文目录\\space name\\file.txt。'
 KEY = 'install-localhost-fixture-key'
 
 
@@ -32,12 +33,14 @@ def install(source, destination, config_dir, cwd):
 def launch(cwd, environment, arguments):
     # 使用裸命令进行系统 PATH 查找，不直接指定安装启动器。
     if os.name == 'nt':
-        # 与手册相同，在 PowerShell 中执行不带扩展名的 ylc，保留多词中文参数。
+        # 原生 Java 21 在英文 ACP 下会损坏中文 argv；由应用按 UTF-8 展开参数文件。
+        argument_file = cwd / 'cli-arguments.txt'
+        argument_file.write_text('\n'.join(json.dumps(value, ensure_ascii=False) for value in arguments) + '\n', encoding='utf-8')
+        # 仍由 PowerShell 通过 PATH 查找裸命令，不绕过真实安装启动器。
         script = cwd.parent / 'invoke-global-ylc.ps1'
         script.write_text('[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)\n'
-                          '$harnessArguments = @(ConvertFrom-Json $env:HARNESS_INSTALL_SMOKE_ARGUMENTS)\n'
-                          '& ylc @harnessArguments\nexit $LASTEXITCODE\n', encoding='utf-8-sig')
-        environment = dict(environment, HARNESS_INSTALL_SMOKE_ARGUMENTS=json.dumps(arguments, ensure_ascii=False))
+                          '& ylc "@cli-arguments.txt"\nexit $LASTEXITCODE\n', encoding='utf-8-sig')
+        environment = dict(environment, JDK_JAVA_OPTIONS='--disable-@files')
         command = ['powershell.exe', '-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(script)]
     else:
         command = ['ylc', *arguments]
@@ -81,6 +84,20 @@ def verify_install(source):
     with tempfile.TemporaryDirectory(prefix='harness install smoke ') as temporary:
         base = Path(temporary)
         destination = base / '独立安装 with spaces'
+        acp = ctypes.windll.kernel32.GetACP() if os.name == 'nt' else None
+        chinese_installation = {'status': 'PASS', 'path': str(destination)}
+        if acp is not None:
+            try:
+                encoded = str(destination).encode(f'cp{acp}', errors='strict')
+                representable = encoded.decode(f'cp{acp}') == str(destination)
+            except UnicodeError:
+                representable = False
+            if not representable:
+                # -jar 路径在产品 main 之前处理；明确记录未验证能力，不伪装为中文安装通过。
+                chinese_installation['status'] = 'SKIP'
+                chinese_installation['reason'] = f'Java 21 原生启动器的 ACP {acp} 无法无损表示中文 JAR 路径'
+                destination = base / 'standalone install with spaces'
+                assert str(destination).encode(f'cp{acp}').decode(f'cp{acp}') == str(destination), '测试安装根目录本身也无法用本机 ACP 表示'
         invocation = base / '项目 A with spaces'
         explicit = base / '项目 B with spaces'
         legacy = base / '旧配置指定的目录'
@@ -148,7 +165,11 @@ def verify_install(source):
             assert not destination.joinpath('.harness').exists() and not destination.joinpath('跨目录.txt').exists()
             server.shutdown()
     return {'status': 'PASS', 'source': str(source), 'platform': sys.platform, 'localhostRequests': len(requests),
-            'checks': ['裸命令通过 PATH 启动', '中文空格路径', '分别从两个项目目录启动，默认使用各自目录', '显式相对 -w 工作区',
+            'windowsACP': acp, 'installationDirectory': str(destination),
+            'chineseInstallationDirectory': chinese_installation,
+            'windowsArgumentTransport': 'Picocli UTF-8 @文件；JDK_JAVA_OPTIONS 禁止原生预展开' if os.name == 'nt' else None,
+            'checks': ['裸命令通过 PATH 启动', '中文空格调用目录和工作区', '中文任务、引号与反斜线精确保留',
+                       '分别从两个项目目录启动，默认使用各自目录', '显式相对 -w 工作区',
                        '旧 YAML workspace 不重定向工作区', '未指定工作区的 resume 从当前目录恢复',
                        '用户默认配置与直接密钥', '重复安装保留配置', '显式相对配置覆盖',
                        'help/doctor 无请求及用法退出码', '凭据不进入输出或会话', '安装目录不被当作工作区']}
