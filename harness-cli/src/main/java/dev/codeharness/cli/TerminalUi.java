@@ -55,16 +55,9 @@ final class TerminalUi implements AutoCloseable {
     void welcome(Path workspace, String provider, String model, String session) {
         connection(provider, model, host);
         out.println();
-        out.println("  " + style("1;36", "(>_)") + "  " + style("1", "ylc") + "  " + style("90", "YLCoder-harness"));
-        out.println("       " + style("90", "你的编程搭子。把想法敲进来，一起开工。"));
-        out.println();
-        out.println("  " + style("90", "工作区") + "  " + safe(workspace.toString()));
-        out.println();
-        out.println("  直接输入任务，回车开始。" + style("90", "  小步快跑，改完再验。"));
-        out.println("  " + style("36", "/project") + style("90", " 项目   ")
-                + style("36", "/status") + style("90", " 用量   ")
-                + style("36", "/help") + style("90", " 帮助   ")
-                + style("36", "/exit") + style("90", " 退出"));
+        out.println("  " + style("1;36", "ylc") + "  " + style("90", "YLCoder-harness · " + brief(safe(workspace.toString()), 48)));
+        out.println("  " + style("36", "/project") + "  " + style("36", "/status") + "  "
+                + style("36", "/help") + "  " + style("36", "/exit"));
         out.println();
         out.flush();
     }
@@ -95,7 +88,7 @@ final class TerminalUi implements AutoCloseable {
     synchronized void prompt() {
         refreshBottom();
         if (bottom == null || !bottom.active()) compact(out, "状态");
-        out.print(style("1;36", "ylc> "));
+        out.print(style("1;36", "› "));
         out.flush();
     }
 
@@ -153,8 +146,6 @@ final class TerminalUi implements AutoCloseable {
     private void progress() {
         if (!progressStarted) {
             err.println();
-            err.println("  " + style("90", "任务 " + taskNumber) + " · " + style("90", "执行进度"));
-            err.println();
         }
         progressStarted = true;
         answerStarted = false;
@@ -163,7 +154,8 @@ final class TerminalUi implements AutoCloseable {
     synchronized void thinking(int iteration) {
         if (!showProgress) return;
         progress();
-        err.printf("  %s  %s%n", style("90", String.format(Locale.ROOT, "%02d", ++step)),
+        step++;
+        err.printf("  %s %s%n", style("90", "●"),
                 style("90", iteration == 1 ? "正在思考…" : "整理结果…（第 " + iteration + " 次请求）"));
         err.flush();
         refreshBottom();
@@ -172,6 +164,7 @@ final class TerminalUi implements AutoCloseable {
     synchronized void tool(ToolCall call) {
         if (!showProgress) return;
         progress();
+        step++;
         String label = switch (call.name()) {
             case "list_files" -> "浏览项目";
             case "search_files" -> "搜索文件";
@@ -191,8 +184,8 @@ final class TerminalUi implements AutoCloseable {
                 // 参数由工具验证；展示层不回显可能包含秘密的原始参数或异常。
             }
         }
-        err.printf("  %s  %s%s%n", style("90", String.format(Locale.ROOT, "%02d", ++step)), style("36", label),
-                path.isEmpty() ? "" : "  " + style("90", brief(path, 44)));
+        err.printf("  %s %s%s%n", style("90", "●"), style("36", label),
+                path.isEmpty() ? "" : "  " + style("90", brief(path, 50)));
         err.flush();
         refreshBottom();
     }
@@ -200,22 +193,26 @@ final class TerminalUi implements AutoCloseable {
     synchronized void review(String notice) {
         if (!showProgress) return;
         progress();
-        err.println("      " + style("90", safe(notice)));
+        err.println("    " + style("90", safe(notice)));
         err.flush();
         refreshBottom();
     }
 
     synchronized void toolError(String name) {
         if (!showProgress) return;
-        err.println("      " + style("33", "工具未完成：" + safe(name) + "；正在把错误交给模型处理。"));
+        err.println("    " + style("33", "工具未完成：" + safe(name) + "；正在把错误交给模型处理。"));
         err.flush();
         refreshBottom();
     }
 
     synchronized void answer() {
         if (answerStarted) return;
-        out.println();
-        out.println("  " + style("1;36", "ylc") + " " + style("90", "· 助手回复"));
+        if (progressStarted) {
+            err.printf("  %s %s%n", style("32", "✓"), style("32", activity + " · " + step + " 次" + (tools == 0 ? "" : "工具") + " · "
+                    + String.format(Locale.ROOT, "%.1f 秒", (System.nanoTime() - taskStarted) / 1_000_000_000.0)));
+            err.println();
+            err.flush();
+        }
         out.println();
         out.flush();
         answerStarted = true;
@@ -226,7 +223,7 @@ final class TerminalUi implements AutoCloseable {
     void summary(String session, AgentResult result, int toolCount, boolean interactive,
                  UsageDashboard.Snapshot task, UsageDashboard.Snapshot process, CommandReview.Stats review) {
         String status = switch (result.status()) {
-            case COMPLETED -> toolCount == 0 ? "已回复" : "本轮完成";
+            case COMPLETED -> toolCount == 0 ? "已回复" : "完成";
             case MAX_ITERATIONS -> "达到调用上限";
             case CANCELLED -> "已取消";
             case FAILED -> "未完成";
@@ -234,8 +231,16 @@ final class TerminalUi implements AutoCloseable {
         elapsedSeconds = result.elapsed().toMillis() / 1000.0;
         taskStarted = 0;
         live(task, process, review, Math.max(0, task.requests() - review.requests()), toolCount, status);
-        if (interactive) return;
-        compact(err, "状态 · " + status);
+        if (interactive) {
+            out.println();
+            String input = compactAmount(task.total().inputTokens(), task.inputReportedRequests(), task.requests());
+            String output = compactAmount(task.total().outputTokens(), task.outputReportedRequests(), task.requests());
+            String rate = cacheRate(task, true);
+            out.println("  " + style("90", status + " · ↑" + input + " ↓" + output + " · 缓存 " + rate + " · "
+                    + String.format(Locale.ROOT, "%.1f 秒", elapsedSeconds)));
+            return;
+        }
+        compact(err, status);
         if (!interactive) {
             err.println("  继续：ylc resume " + safe(session));
         }
@@ -279,7 +284,7 @@ final class TerminalUi implements AutoCloseable {
 
     private void compact(PrintWriter writer, String title) {
         writer.println();
-        writer.println("  " + style("90", "── " + title + " ──"));
+        writer.println("  " + style("36", title));
         bottomLines().forEach(writer::println);
         writer.println();
         writer.flush();

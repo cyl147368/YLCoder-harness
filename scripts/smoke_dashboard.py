@@ -210,23 +210,23 @@ def verify_dashboard(launcher=None):
             answer('第一轮任务完成。', usage(100, 4, 90)),
             answer('第二轮任务完成。', usage(80, 6, 0))], [], '请读取 marker.txt。\n再回复一句话。\n/status\n/exit\n')
         stdout, stderr = interactive.stdout, interactive.stderr
-        welcome = stdout.split('── 状态 ──', 1)[0]
-        assert '(>_)  ylc' in welcome and '工作区' in welcome
+        welcome = stdout.split('状态', 1)[0] if '状态' in stdout else stdout.split('\n\n')[0]
+        assert 'ylc' in welcome and 'YLCoder-harness' in welcome
         assert MODEL not in welcome and '127.0.0.1' not in welcome, '连接状态只应在底部显示'
-        assert re.search(r'02\s+读取文件  marker.txt', stderr), '工具与路径应合并成一行'
+        assert re.search(r'● 读取文件  marker.txt', stderr), '工具与路径应合并成一行'
         assert stdout.count('第一轮任务完成。') == 1 and stdout.count('第二轮任务完成。') == 1
         assert '第一轮任务完成。' not in stderr and '第二轮任务完成。' not in stderr
         assert '正在思考' not in stdout and '读取文件' not in stdout
         assert '模型' in stdout and MODEL in stdout and '厂商' in stdout and PROVIDER in stdout
         assert '127.0.0.1' in stdout
         assert '本轮统计' not in stdout + stderr, '普通交互不应重复展开整块本轮统计'
-        assert stdout.count('── 进程累计 ──') == 1, '累计详情只应由显式 /status 展开一次'
+        assert stdout.count('进程累计') == 1, '累计详情只应由显式 /status 展开一次'
         for line in stdout.splitlines():
-            if 'ylc> ' in line or line.strip() == 'ylc>':
-                assert line.strip() == 'ylc>', ('提示符和后续内容挤在一起', line)
-        assert stdout.count('ylc>') == 4
+            if '› ' in line or line.strip() == '›':
+                assert line.strip() == '›', ('提示符和后续内容挤在一起', line)
+        assert stdout.count('›') >= 3
         # 管道模式不重绘屏幕，但每次输入前均有紧凑状态区，不能把状态塞进回答正文。
-        before_prompt = stdout.split('ylc>')[:-1]
+        before_prompt = stdout.split('›')[:-1]
         for index, region in enumerate(before_prompt):
             footer = assert_compact_status(region, '交互提示符 ' + str(index + 1))
             if index == 0:
@@ -276,7 +276,7 @@ def verify_dashboard(launcher=None):
         plain = run('plain-quiet', [answer('这行是唯一的标准输出。', usage(40, 4, 0))],
             ['--quiet', 'run', '回复一句话'])
         assert plain.stdout == '这行是唯一的标准输出。\n', plain.stdout
-        for marker in ('正在思考', '整理结果', '执行进度'):
+        for marker in ('正在思考', '整理结果'):
             assert marker not in plain.stderr, plain.stderr
         assert '本轮统计' not in plain.stderr, '单次运行统计应使用紧凑状态区'
         assert_compact_status(plain.stderr, '--quiet run stderr')

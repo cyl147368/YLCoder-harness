@@ -64,6 +64,7 @@ class TerminalExperienceTest {
         StringWriter out = new StringWriter(), err = new StringWriter();
         var ui = new TerminalUi(new PrintWriter(out, true), new PrintWriter(err, true), false);
         var json = new ObjectMapper();
+        ui.beginTask(true);
         ui.tool(new ToolCall("a", "write_file", json.writeValueAsString(Map.of("path", "src/\033[2J\n你好.java", "content", "private-content"))));
         ui.tool(new ToolCall("b", "run_command", json.writeValueAsString(Map.of("command", "echo private-command"))));
         assertTrue(err.toString().contains("写入文件"));
@@ -71,14 +72,15 @@ class TerminalExperienceTest {
         assertFalse(err.toString().contains("\033"));
         assertFalse(err.toString().contains("private-content"));
         assertFalse(err.toString().contains("private-command"));
-        assertTrue(err.toString().contains("执行进度"));
-        assertTrue(err.toString().matches("(?s).*01  写入文件  src/[^\\r\\n]*\\R  02  执行命令.*"),
+        assertFalse(err.toString().contains("执行进度"), "移除了执行进度标题");
+        assertTrue(err.toString().matches("(?s).*● 写入文件  src/[^\\r\\n]*\\R  ● 执行命令.*"),
                 "工具与路径同处一行，不能回显命令或文件正文");
     }
 
     @Test void responseWithoutToolEvidenceShowsReplyAndMissingUsageClearly() {
         StringWriter out = new StringWriter(), err = new StringWriter();
         var ui = new TerminalUi(new PrintWriter(out, true), new PrintWriter(err, true), false);
+        ui.beginTask(true);
         ui.summary("full-session-id", new AgentResult(AgentResult.Status.COMPLETED, "你好", "", 1,
                 TokenUsage.ZERO, Duration.ofMillis(4716), List.of()), 0, true,
                 new UsageDashboard.Snapshot(1, TokenUsage.ZERO, 0, 0, 0, null, null, "current-task"),
@@ -87,11 +89,10 @@ class TerminalExperienceTest {
         assertEquals("", err.toString(), "交互结束后只刷新底部状态，不能重复打印大面板");
         ui.prompt();
         assertTrue(out.toString().contains("已回复"));
-        assertTrue(out.toString().contains("未调用工具"));
-        assertTrue(out.toString().contains("未报告"));
+        assertTrue(out.toString().contains("— 未报告"));
         assertTrue(out.toString().contains("4.7 秒"));
         assertFalse(out.toString().contains("full-session-id"));
-        assertTrue(out.toString().endsWith("ylc> "));
+        assertTrue(out.toString().endsWith("› "));
     }
 
     @Test void connectionAndUsageStayInFooterBelowAnswerInsteadOfRepeatedWelcomePanels() {
@@ -100,8 +101,9 @@ class TerminalExperienceTest {
         var ui = new TerminalUi(writer, writer, false);
         ui.connection("openai-compatible", "footer-model", "example.test");
         ui.welcome(workspace, "openai-compatible", "footer-model", "session");
-        assertTrue(shared.toString().contains("(>_)  ylc"));
-        assertTrue(shared.toString().contains("工作区  " + workspace));
+        assertFalse(shared.toString().contains("(>_)"), "移除了 ASCII 表情");
+        assertTrue(shared.toString().contains("ylc"));
+        assertTrue(shared.toString().contains("YLCoder-harness"));
         for (String command : List.of("/project", "/status", "/help", "/exit"))
             assertTrue(shared.toString().contains(command));
         assertFalse(shared.toString().contains("footer-model"), "模型状态不应占据欢迎区");
@@ -115,9 +117,8 @@ class TerminalExperienceTest {
                 new dev.codeharness.cli.approval.CommandReview.Stats(0, 0, 0, 0, TokenUsage.ZERO, 0));
         ui.prompt();
         String rendered = shared.toString();
-        assertTrue(rendered.indexOf("这是正文标记。") < rendered.indexOf("footer-model"));
-        assertTrue(rendered.indexOf("缓存命中率") < rendered.lastIndexOf("ylc> "));
-        assertFalse(rendered.contains("本轮统计"));
+        assertTrue(rendered.indexOf("这是正文标记。") < rendered.indexOf("已回复"));
+        assertTrue(rendered.indexOf("缓存") < rendered.lastIndexOf("› "));
         assertFalse(rendered.contains("进程累计"), "累计详情由 /status 主动展开");
     }
 

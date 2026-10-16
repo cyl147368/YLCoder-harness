@@ -124,7 +124,7 @@ def main():
                         interactive.communicate(timeout=10)
             assert interactive.returncode == 0, (stdout, stderr)
             assert stdout.count('第一个任务完成。') == 1 and stdout.count('第二个任务完成。') == 1
-            assert 'ylc> ' in stdout, '交互提示符应使用新的启动命令'
+            assert '› ' in stdout, '交互提示符应使用精简标记'
             for index, region in enumerate(stdout.split('ylc>')[:-1]):
                 footer = '\n'.join(line.strip() for line in region.splitlines() if line.strip())
                 footer = '\n'.join(footer.splitlines()[-5:])
@@ -132,7 +132,7 @@ def main():
                                '输出 token', '缓存 token', '缓存命中率'):
                     assert marker in footer, ('第几个提示符', index + 1, '缺少底部状态字段', marker, footer)
             assert '本轮统计' not in stdout + stderr, '交互轮次不能展开旧版大统计面板'
-            assert stdout.count('── 进程累计 ──') == 1, '累计详情仅由显式 /status 展开'
+            assert stdout.count('进程累计') == 1, '累计详情仅由显式 /status 展开'
             assert any(marker in stdout for marker in ('Enter a coding task.', '请输入编程任务。'))
             assert any(marker + first['id'] in stdout for marker in ('Resume with: ylc resume ', '继续会话：ylc resume '))
             assert re.search(r'^\s*会话\s+' + re.escape(first['id']) + r'（已保存）\s*$',
