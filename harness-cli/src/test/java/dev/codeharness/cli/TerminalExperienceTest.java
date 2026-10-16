@@ -72,7 +72,8 @@ class TerminalExperienceTest {
         assertFalse(err.toString().contains("private-content"));
         assertFalse(err.toString().contains("private-command"));
         assertTrue(err.toString().contains("执行进度"));
-        assertTrue(err.toString().matches("(?s).*01  写入文件\\R      src/.*\\R  02  执行命令.*"));
+        assertTrue(err.toString().matches("(?s).*01  写入文件  src/[^\\r\\n]*\\R  02  执行命令.*"),
+                "工具与路径同处一行，不能回显命令或文件正文");
     }
 
     @Test void responseWithoutToolEvidenceShowsReplyAndMissingUsageClearly() {
@@ -99,7 +100,12 @@ class TerminalExperienceTest {
         var ui = new TerminalUi(writer, writer, false);
         ui.connection("openai-compatible", "footer-model", "example.test");
         ui.welcome(workspace, "openai-compatible", "footer-model", "session");
+        assertTrue(shared.toString().contains("(>_)  ylc"));
+        assertTrue(shared.toString().contains("工作区  " + workspace));
+        for (String command : List.of("/project", "/status", "/help", "/exit"))
+            assertTrue(shared.toString().contains(command));
         assertFalse(shared.toString().contains("footer-model"), "模型状态不应占据欢迎区");
+        assertFalse(shared.toString().contains("example.test"), "连接信息仅由底栏提供");
         ui.beginTask(false);
         ui.answer();
         writer.println("这是正文标记。");
@@ -129,5 +135,47 @@ class TerminalExperienceTest {
                 new UsageDashboard.Snapshot(1, new TokenUsage(20, 0, 0), 1, 1, 1, 0.0, 0.0, "current-process"));
         assertTrue(out.toString().contains("0.0%（缓存输入 / 输入）"));
         assertFalse(out.toString().contains("未报告"));
+    }
+
+    @Test void compactFooterKeepsKeyFieldsWithinEightyColumnsAndDistinguishesUsageStates() {
+        StringWriter out = new StringWriter();
+        var ui = new TerminalUi(new PrintWriter(out, true), new PrintWriter(new StringWriter(), true), false);
+        ui.connection("openai-compatible", "很长的模型名称".repeat(10), "custom-provider-host-name-".repeat(8));
+        var review = new dev.codeharness.cli.approval.CommandReview.Stats(0, 0, 0, 0, TokenUsage.ZERO, 0);
+        var cases = List.of(
+                UsageDashboard.Snapshot.empty("current-task"),
+                new UsageDashboard.Snapshot(1, TokenUsage.ZERO, 0, 0, 0, null, null, "current-task"),
+                new UsageDashboard.Snapshot(1, TokenUsage.ZERO, 1, 1, 1, 0.0, 0.0, "current-task"),
+                new UsageDashboard.Snapshot(2, new TokenUsage(200, 10, 10), 1, 1, 1, null, 50.0, "current-task"));
+        for (int index = 0; index < cases.size(); index++) {
+            out.getBuffer().setLength(0);
+            var snapshot = cases.get(index);
+            ui.live(snapshot, snapshot, review, snapshot.requests(), 0, "就绪");
+            ui.prompt();
+            var rows = out.toString().lines().filter(line -> !line.isBlank()).toList();
+            assertEquals(6, rows.size(), "标题、四行状态和输入各占一行");
+            assertTrue(rows.get(1).contains("模型") && rows.get(1).contains("厂商"));
+            assertTrue(rows.get(2).contains("输入 token") && rows.get(2).contains("输出 token"));
+            assertTrue(rows.get(3).contains("缓存 token") && rows.get(3).contains("缓存命中率"));
+            for (String row : rows.subList(1, 4))
+                assertTrue(row.codePoints().map(code -> code < 128 ? 1 : 2).sum() <= 79,
+                        "80 列终端必须完整显示关键字段并保留最后一列：" + row);
+            switch (index) {
+                case 0 -> assertTrue(rows.get(3).contains("尚无请求"));
+                case 1 -> {
+                    assertTrue(rows.get(2).contains("输入 token — 未报告"));
+                    assertTrue(rows.get(3).contains("缓存命中率 — 未报告"));
+                }
+                case 2 -> {
+                    assertTrue(rows.get(2).contains("输入 token 0"));
+                    assertTrue(rows.get(3).contains("缓存命中率 0.0%"));
+                    assertFalse(out.toString().contains("未报告"));
+                }
+                case 3 -> {
+                    assertTrue(rows.get(2).contains("200（部分）"));
+                    assertTrue(rows.get(3).contains("50.0%（部分）"));
+                }
+            }
+        }
     }
 }

@@ -210,6 +210,10 @@ def verify_dashboard(launcher=None):
             answer('第一轮任务完成。', usage(100, 4, 90)),
             answer('第二轮任务完成。', usage(80, 6, 0))], [], '请读取 marker.txt。\n再回复一句话。\n/status\n/exit\n')
         stdout, stderr = interactive.stdout, interactive.stderr
+        welcome = stdout.split('── 状态 ──', 1)[0]
+        assert '(>_)  ylc' in welcome and '工作区' in welcome
+        assert MODEL not in welcome and '127.0.0.1' not in welcome, '连接状态只应在底部显示'
+        assert re.search(r'02\s+读取文件  marker.txt', stderr), '工具与路径应合并成一行'
         assert stdout.count('第一轮任务完成。') == 1 and stdout.count('第二轮任务完成。') == 1
         assert '第一轮任务完成。' not in stderr and '第二轮任务完成。' not in stderr
         assert '正在思考' not in stdout and '读取文件' not in stdout

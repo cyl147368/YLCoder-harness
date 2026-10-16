@@ -55,11 +55,16 @@ final class TerminalUi implements AutoCloseable {
     void welcome(Path workspace, String provider, String model, String session) {
         connection(provider, model, host);
         out.println();
-        out.println("  " + style("1;36", "YLCoder-harness") + "  " + style("90", "编程助手"));
-        out.println("  " + style("90", "────────────────────────────────────────────────"));
+        out.println("  " + style("1;36", "(>_)") + "  " + style("1", "ylc") + "  " + style("90", "YLCoder-harness"));
+        out.println("       " + style("90", "你的编程搭子。把想法敲进来，一起开工。"));
         out.println();
-        out.println("  直接输入任务，回车开始。");
-        out.println("  /project 项目概览   /status 状态与用量   /help 帮助   /exit 退出");
+        out.println("  " + style("90", "工作区") + "  " + safe(workspace.toString()));
+        out.println();
+        out.println("  直接输入任务，回车开始。" + style("90", "  小步快跑，改完再验。"));
+        out.println("  " + style("36", "/project") + style("90", " 项目   ")
+                + style("36", "/status") + style("90", " 用量   ")
+                + style("36", "/help") + style("90", " 帮助   ")
+                + style("36", "/exit") + style("90", " 退出"));
         out.println();
         out.flush();
     }
@@ -146,7 +151,11 @@ final class TerminalUi implements AutoCloseable {
     }
 
     private void progress() {
-        if (!progressStarted) section(err, "任务 " + taskNumber + " · 执行进度");
+        if (!progressStarted) {
+            err.println();
+            err.println("  " + style("90", "任务 " + taskNumber) + " · " + style("90", "执行进度"));
+            err.println();
+        }
         progressStarted = true;
         answerStarted = false;
     }
@@ -154,8 +163,8 @@ final class TerminalUi implements AutoCloseable {
     synchronized void thinking(int iteration) {
         if (!showProgress) return;
         progress();
-        if (step > 0) err.println();
-        err.printf("  %02d  %s%n", ++step, style("90", iteration == 1 ? "正在思考…" : "整理结果…（第 " + iteration + " 次请求）"));
+        err.printf("  %s  %s%n", style("90", String.format(Locale.ROOT, "%02d", ++step)),
+                style("90", iteration == 1 ? "正在思考…" : "整理结果…（第 " + iteration + " 次请求）"));
         err.flush();
         refreshBottom();
     }
@@ -182,8 +191,8 @@ final class TerminalUi implements AutoCloseable {
                 // 参数由工具验证；展示层不回显可能包含秘密的原始参数或异常。
             }
         }
-        err.printf("  %02d  %s%n", ++step, style("36", label));
-        if (!path.isEmpty()) err.println("      " + style("90", path));
+        err.printf("  %s  %s%s%n", style("90", String.format(Locale.ROOT, "%02d", ++step)), style("36", label),
+                path.isEmpty() ? "" : "  " + style("90", brief(path, 44)));
         err.flush();
         refreshBottom();
     }
@@ -205,7 +214,9 @@ final class TerminalUi implements AutoCloseable {
 
     synchronized void answer() {
         if (answerStarted) return;
-        section(out, "助手回复");
+        out.println();
+        out.println("  " + style("1;36", "ylc") + " " + style("90", "· 助手回复"));
+        out.println();
         out.flush();
         answerStarted = true;
         progressStarted = false;
@@ -250,7 +261,7 @@ final class TerminalUi implements AutoCloseable {
 
     private static String compactAmount(long value, int reported, int requests) {
         if (requests == 0) return "—";
-        if (reported == 0) return "—（未报告）";
+        if (reported == 0) return "— 未报告";
         return String.format(Locale.ROOT, "%,d", value) + (reported < requests ? "（部分）" : "");
     }
 
@@ -297,9 +308,9 @@ final class TerminalUi implements AutoCloseable {
         String rate;
         if (snapshot.requests() == 0) rate = "—（尚无请求）";
         else if (snapshot.cacheHitRatePercent() != null) rate = percent(snapshot.cacheHitRatePercent()) + (compact ? "" : "（缓存输入 / 输入）");
-        else if (snapshot.reportedCacheHitRatePercent() != null) rate = percent(snapshot.reportedCacheHitRatePercent()) + "（仅已报告部分）";
-        else if (snapshot.cacheReportedRequests() == 0) rate = "—（缓存用量未报告）";
-        else rate = "—（缺少有效的输入与缓存用量）";
+        else if (snapshot.reportedCacheHitRatePercent() != null) rate = percent(snapshot.reportedCacheHitRatePercent()) + (compact ? "（部分）" : "（仅已报告部分）");
+        else if (snapshot.cacheReportedRequests() == 0) rate = compact ? "— 未报告" : "—（缓存用量未报告）";
+        else rate = compact ? "— 未报告" : "—（缺少有效的输入与缓存用量）";
         return rate;
     }
 

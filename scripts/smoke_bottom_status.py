@@ -307,7 +307,7 @@ def console_child(options):
 
     def assert_second_progress_retained(screen):
         body = second_task_body(screen)
-        assert '── 任务 2 · 执行进度 ──' in body, ('正文被清除：第二任务标题缺失', body)
+        assert '任务 2 · 执行进度' in body, ('正文被清除：第二任务标题缺失', body)
         assert re.search(r'01\s+正在思考', body), ('正文被清除：第二任务思考进度缺失', body)
         assert re.search(r'02\s+执行命令', body), ('正文被清除：第二任务工具进度缺失', body)
         assert COMMAND in body, ('正文被清除：完整审批命令缺失', body)
@@ -318,6 +318,7 @@ def console_child(options):
         await_screen(lambda row: has_footer(row) and 'ylc>' in row['body'], '初始底栏')
         initial = persist_snapshot('initial')
         assert '尚无请求' in initial['footer'], initial
+        assert initial['body'].splitlines()[-1].strip() == '─' * (initial['viewportWidth'] - 3), initial
         type_line(FIRST)
         ready = workspace / 'first-request.ready'
         await_screen(lambda row: ready.exists() and has_footer(row), '响应阻塞期间的底栏')
@@ -356,7 +357,7 @@ def console_child(options):
             completed = persist_snapshot('secondTask')
             second_body = assert_second_progress_retained(completed)
             assert re.search(r'03\s+整理结果', second_body), ('正文被清除：后续模型进度缺失', second_body)
-            assert '── 助手回复 ──' in second_body, ('正文被清除：第二任务回复标题缺失', second_body)
+            assert '助手回复' in second_body, ('正文被清除：第二任务回复标题缺失', second_body)
             assert SECOND_END in second_body, ('正文被清除：第二任务回复内容缺失', second_body)
         type_line('/exit')
         evidence['exitCode'] = process.wait(timeout=10)

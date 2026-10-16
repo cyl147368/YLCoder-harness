@@ -68,7 +68,8 @@ final class BottomStatusBar implements AutoCloseable {
         if (!active()) return;
         try {
             Screen screen = surface.screen();
-            int rows = Math.min(MAX_ROWS, Math.max(1, lines.size()));
+            // 一行轻分隔和最多四行状态共同占用预留区；正文不能进入分隔行。
+            int rows = 1 + Math.min(MAX_ROWS - 1, Math.max(1, lines.size()));
             if (!usable(screen, rows)) { disable(); return; }
             boolean changed = lastScreen == null || rows != footerRows
                     || screen.width() != lastScreen.width() || screen.height() != lastScreen.height()
@@ -81,7 +82,12 @@ final class BottomStatusBar implements AutoCloseable {
             int start = screen.height() - footerRows + 1;
             for (int index = 0; index < footerRows; index++) {
                 writer.print(ESC + (start + index) + ";1H" + ESC + "2K");
-                if (index < lines.size()) writer.print(fit(lines.get(index), screen.width() - 1));
+                if (index == 0) {
+                    // 分隔线由程序生成，保留右侧安全列；不接受外部颜色或控制序列。
+                    writer.print("  " + "─".repeat(screen.width() - 3));
+                } else if (index - 1 < lines.size()) {
+                    writer.print(fit(lines.get(index - 1), screen.width() - 1));
+                }
             }
             writer.print("\0338");
             writer.flush();
