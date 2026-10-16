@@ -1,0 +1,145 @@
+{
+  "benchmarkVersion" : 1,
+  "environment" : {
+    "java" : "21.0.10",
+    "os" : "Windows 11"
+  },
+  "method" : {
+    "elapsedScope" : "CodeAgent.run only; includes modeled waits",
+    "mutations" : 1,
+    "percentile" : "nearest rank",
+    "readDelayMs" : 80,
+    "readsAfterMutation" : 4,
+    "readsBeforeMutation" : 4,
+    "samplesPerVariant" : 5,
+    "warmupsPerVariant" : 1
+  },
+  "scope" : "Delayed mock read workload through CodeAgent; no network, provider latency, disk speed or production savings claim.",
+  "variants" : [ {
+    "allOutputChecksPassed" : true,
+    "elapsedMs" : {
+      "p50" : 743.5261,
+      "p95" : 744.9392
+    },
+    "maxParallelReads" : 1,
+    "samples" : [ {
+      "elapsedMs" : 742.2425,
+      "maxActiveReads" : 1,
+      "overlapObserved" : false,
+      "outputCorrect" : true,
+      "finalState" : 1,
+      "readCompletions" : 8,
+      "modelRequests" : 2,
+      "requestMessageCounts" : [ 2, 12 ],
+      "requestSchemaCounts" : [ 2, 2 ],
+      "serializedRequestBytes" : 3255
+    }, {
+      "elapsedMs" : 744.9392,
+      "maxActiveReads" : 1,
+      "overlapObserved" : false,
+      "outputCorrect" : true,
+      "finalState" : 1,
+      "readCompletions" : 8,
+      "modelRequests" : 2,
+      "requestMessageCounts" : [ 2, 12 ],
+      "requestSchemaCounts" : [ 2, 2 ],
+      "serializedRequestBytes" : 3255
+    }, {
+      "elapsedMs" : 741.9128,
+      "maxActiveReads" : 1,
+      "overlapObserved" : false,
+      "outputCorrect" : true,
+      "finalState" : 1,
+      "readCompletions" : 8,
+      "modelRequests" : 2,
+      "requestMessageCounts" : [ 2, 12 ],
+      "requestSchemaCounts" : [ 2, 2 ],
+      "serializedRequestBytes" : 3255
+    }, {
+      "elapsedMs" : 743.9212,
+      "maxActiveReads" : 1,
+      "overlapObserved" : false,
+      "outputCorrect" : true,
+      "finalState" : 1,
+      "readCompletions" : 8,
+      "modelRequests" : 2,
+      "requestMessageCounts" : [ 2, 12 ],
+      "requestSchemaCounts" : [ 2, 2 ],
+      "serializedRequestBytes" : 3255
+    }, {
+      "elapsedMs" : 743.5261,
+      "maxActiveReads" : 1,
+      "overlapObserved" : false,
+      "outputCorrect" : true,
+      "finalState" : 1,
+      "readCompletions" : 8,
+      "modelRequests" : 2,
+      "requestMessageCounts" : [ 2, 12 ],
+      "requestSchemaCounts" : [ 2, 2 ],
+      "serializedRequestBytes" : 3255
+    } ]
+  }, {
+    "allOutputChecksPassed" : true,
+    "elapsedMs" : {
+      "p50" : 185.4291,
+      "p95" : 187.7925
+    },
+    "maxParallelReads" : 4,
+    "samples" : [ {
+      "elapsedMs" : 187.7925,
+      "maxActiveReads" : 4,
+      "overlapObserved" : true,
+      "outputCorrect" : true,
+      "finalState" : 1,
+      "readCompletions" : 8,
+      "modelRequests" : 2,
+      "requestMessageCounts" : [ 2, 12 ],
+      "requestSchemaCounts" : [ 2, 2 ],
+      "serializedRequestBytes" : 3255
+    }, {
+      "elapsedMs" : 184.1487,
+      "maxActiveReads" : 4,
+      "overlapObserved" : true,
+      "outputCorrect" : true,
+      "finalState" : 1,
+      "readCompletions" : 8,
+      "modelRequests" : 2,
+      "requestMessageCounts" : [ 2, 12 ],
+      "requestSchemaCounts" : [ 2, 2 ],
+      "serializedRequestBytes" : 3255
+    }, {
+      "elapsedMs" : 186.4863,
+      "maxActiveReads" : 4,
+      "overlapObserved" : true,
+      "outputCorrect" : true,
+      "finalState" : 1,
+      "readCompletions" : 8,
+      "modelRequests" : 2,
+      "requestMessageCounts" : [ 2, 12 ],
+      "requestSchemaCounts" : [ 2, 2 ],
+      "serializedRequestBytes" : 3255
+    }, {
+      "elapsedMs" : 183.5093,
+      "maxActiveReads" : 4,
+      "overlapObserved" : true,
+      "outputCorrect" : true,
+      "finalState" : 1,
+      "readCompletions" : 8,
+      "modelRequests" : 2,
+      "requestMessageCounts" : [ 2, 12 ],
+      "requestSchemaCounts" : [ 2, 2 ],
+      "serializedRequestBytes" : 3255
+    }, {
+      "elapsedMs" : 185.4291,
+      "maxActiveReads" : 4,
+      "overlapObserved" : true,
+      "outputCorrect" : true,
+      "finalState" : 1,
+      "readCompletions" : 8,
+      "modelRequests" : 2,
+      "requestMessageCounts" : [ 2, 12 ],
+      "requestSchemaCounts" : [ 2, 2 ],
+      "serializedRequestBytes" : 3255
+    } ]
+  } ]
+}

@@ -1,0 +1,664 @@
+{
+  "evaluationVersion": 1,
+  "mode": "localhost-scripted-multifile",
+  "scope": "Cross-file tool/context/stale-edit recovery with independent compile/assertions; no model coding-quality or production cost/latency claim.",
+  "createdAt": "2026-10-14T04:41:57.371085+00:00",
+  "artifactSha256": "4f4cd13744faad1e5377a404d36bc0216e9ead037e32aa7b662bce4567f98e9f",
+  "fixtureSha256": "f76386dae417a9dcb5a69729a7be3814c0ac1dd6f423990a5d82bc2695e53827",
+  "controlsOnly": false,
+  "checkerControls": [
+    {
+      "task": "rename-public-api",
+      "allControlsPassed": true,
+      "variants": [
+        {
+          "variant": "buggy",
+          "expectedPass": false,
+          "passed": false,
+          "phase": "compile",
+          "exitCode": 1
+        },
+        {
+          "variant": "repaired",
+          "expectedPass": true,
+          "passed": true,
+          "phase": "assertions",
+          "exitCode": 0
+        },
+        {
+          "variant": "omitted-edit-1",
+          "expectedPass": false,
+          "passed": false,
+          "phase": "compile",
+          "exitCode": 1
+        },
+        {
+          "variant": "omitted-edit-2",
+          "expectedPass": false,
+          "passed": false,
+          "phase": "compile",
+          "exitCode": 1
+        }
+      ]
+    },
+    {
+      "task": "overflow-safe-invoice",
+      "allControlsPassed": true,
+      "variants": [
+        {
+          "variant": "buggy",
+          "expectedPass": false,
+          "passed": false,
+          "phase": "assertions",
+          "exitCode": 1
+        },
+        {
+          "variant": "repaired",
+          "expectedPass": true,
+          "passed": true,
+          "phase": "assertions",
+          "exitCode": 0
+        },
+        {
+          "variant": "omitted-edit-1",
+          "expectedPass": false,
+          "passed": false,
+          "phase": "compile",
+          "exitCode": 1
+        },
+        {
+          "variant": "omitted-edit-2",
+          "expectedPass": false,
+          "passed": false,
+          "phase": "assertions",
+          "exitCode": 1
+        },
+        {
+          "variant": "omitted-edit-3",
+          "expectedPass": false,
+          "passed": false,
+          "phase": "compile",
+          "exitCode": 1
+        }
+      ]
+    },
+    {
+      "task": "literal-delimiter-empty-fields",
+      "allControlsPassed": true,
+      "variants": [
+        {
+          "variant": "buggy",
+          "expectedPass": false,
+          "passed": false,
+          "phase": "assertions",
+          "exitCode": 1
+        },
+        {
+          "variant": "repaired",
+          "expectedPass": true,
+          "passed": true,
+          "phase": "assertions",
+          "exitCode": 0
+        },
+        {
+          "variant": "omitted-edit-1",
+          "expectedPass": false,
+          "passed": false,
+          "phase": "assertions",
+          "exitCode": 1
+        },
+        {
+          "variant": "omitted-edit-2",
+          "expectedPass": false,
+          "passed": false,
+          "phase": "assertions",
+          "exitCode": 1
+        }
+      ]
+    }
+  ],
+  "pairedMeasurements": [
+    {
+      "task": "rename-public-api",
+      "repeat": 1,
+      "bothPassed": true,
+      "reductions": {
+        "serializedCl100kTokensSum": {
+          "baseline": 322167,
+          "compact": 56489,
+          "fraction": 0.8246592605698286
+        },
+        "serializedO200kTokensSum": {
+          "baseline": 322744,
+          "compact": 56780,
+          "fraction": 0.8240710903998215
+        },
+        "serializedUtf8BytesSum": {
+          "baseline": 1325756,
+          "compact": 242305,
+          "fraction": 0.8172325827678698
+        }
+      }
+    },
+    {
+      "task": "rename-public-api",
+      "repeat": 2,
+      "bothPassed": true,
+      "reductions": {
+        "serializedCl100kTokensSum": {
+          "baseline": 322167,
+          "compact": 56489,
+          "fraction": 0.8246592605698286
+        },
+        "serializedO200kTokensSum": {
+          "baseline": 322744,
+          "compact": 56780,
+          "fraction": 0.8240710903998215
+        },
+        "serializedUtf8BytesSum": {
+          "baseline": 1325756,
+          "compact": 242305,
+          "fraction": 0.8172325827678698
+        }
+      }
+    },
+    {
+      "task": "overflow-safe-invoice",
+      "repeat": 1,
+      "bothPassed": true,
+      "reductions": {
+        "serializedCl100kTokensSum": {
+          "baseline": 323911,
+          "compact": 56285,
+          "fraction": 0.8262331319405639
+        },
+        "serializedO200kTokensSum": {
+          "baseline": 324494,
+          "compact": 56580,
+          "fraction": 0.8256362213168811
+        },
+        "serializedUtf8BytesSum": {
+          "baseline": 1332402,
+          "compact": 241191,
+          "fraction": 0.8189803077449599
+        }
+      }
+    },
+    {
+      "task": "overflow-safe-invoice",
+      "repeat": 2,
+      "bothPassed": true,
+      "reductions": {
+        "serializedCl100kTokensSum": {
+          "baseline": 323911,
+          "compact": 56285,
+          "fraction": 0.8262331319405639
+        },
+        "serializedO200kTokensSum": {
+          "baseline": 324494,
+          "compact": 56580,
+          "fraction": 0.8256362213168811
+        },
+        "serializedUtf8BytesSum": {
+          "baseline": 1332402,
+          "compact": 241191,
+          "fraction": 0.8189803077449599
+        }
+      }
+    },
+    {
+      "task": "literal-delimiter-empty-fields",
+      "repeat": 1,
+      "bothPassed": true,
+      "reductions": {
+        "serializedCl100kTokensSum": {
+          "baseline": 323571,
+          "compact": 55945,
+          "fraction": 0.827101316248984
+        },
+        "serializedO200kTokensSum": {
+          "baseline": 324210,
+          "compact": 56296,
+          "fraction": 0.8263594583757441
+        },
+        "serializedUtf8BytesSum": {
+          "baseline": 1333185,
+          "compact": 241974,
+          "fraction": 0.8184993080480203
+        }
+      }
+    },
+    {
+      "task": "literal-delimiter-empty-fields",
+      "repeat": 2,
+      "bothPassed": true,
+      "reductions": {
+        "serializedCl100kTokensSum": {
+          "baseline": 323571,
+          "compact": 55945,
+          "fraction": 0.827101316248984
+        },
+        "serializedO200kTokensSum": {
+          "baseline": 324210,
+          "compact": 56296,
+          "fraction": 0.8263594583757441
+        },
+        "serializedUtf8BytesSum": {
+          "baseline": 1333185,
+          "compact": 241974,
+          "fraction": 0.8184993080480203
+        }
+      }
+    }
+  ],
+  "usageNote": "Token/byte totals measure canonical messages and schemas, excluding vendor templates; provider usage is absent. No savings threshold is used as a correctness gate.",
+  "passed": true,
+  "runs": [
+    {
+      "task": "rename-public-api",
+      "variant": "baseline",
+      "repeat": 1,
+      "passed": true,
+      "status": "COMPLETED",
+      "exitCode": 0,
+      "quality": {
+        "passed": true,
+        "phase": "assertions",
+        "exitCode": 0
+      },
+      "staleEditRejectedWithoutMutation": true,
+      "unrelatedSourcesUnchanged": true,
+      "workflowFailures": [],
+      "unrelatedSourceCount": 1,
+      "historyReadsValidated": 12,
+      "discoveryValidated": true,
+      "requests": 20,
+      "iterations": 20,
+      "contextEstimateBudget": 48000,
+      "processElapsedMs": 1975.1040999999532,
+      "providerUsage": null,
+      "serializedCl100kTokensSum": 322167,
+      "serializedO200kTokensSum": 322744,
+      "serializedUtf8BytesSum": 1325756,
+      "sourceSha256": {
+        "src/Counter.java": "d892dc62fa0c643c0e506257e949c72ba145eb1ed818e40c1b202ea677988c6d",
+        "src/Report.java": "0222ffef0c787f39a7f117da59bea6846059e55a1a7d0f0ca0a0de5c580a5517",
+        "src/BuildIdentity.java": "a17244896bb058ed58a15f5f4451cde218634b5e52e5618afd706302305e8324"
+      }
+    },
+    {
+      "task": "rename-public-api",
+      "variant": "compact",
+      "repeat": 1,
+      "passed": true,
+      "status": "COMPLETED",
+      "exitCode": 0,
+      "quality": {
+        "passed": true,
+        "phase": "assertions",
+        "exitCode": 0
+      },
+      "staleEditRejectedWithoutMutation": true,
+      "unrelatedSourcesUnchanged": true,
+      "workflowFailures": [],
+      "unrelatedSourceCount": 1,
+      "historyReadsValidated": 12,
+      "discoveryValidated": true,
+      "requests": 20,
+      "iterations": 20,
+      "contextEstimateBudget": 4000,
+      "processElapsedMs": 1943.5750000011467,
+      "providerUsage": null,
+      "serializedCl100kTokensSum": 56489,
+      "serializedO200kTokensSum": 56780,
+      "serializedUtf8BytesSum": 242305,
+      "sourceSha256": {
+        "src/Counter.java": "d892dc62fa0c643c0e506257e949c72ba145eb1ed818e40c1b202ea677988c6d",
+        "src/Report.java": "0222ffef0c787f39a7f117da59bea6846059e55a1a7d0f0ca0a0de5c580a5517",
+        "src/BuildIdentity.java": "a17244896bb058ed58a15f5f4451cde218634b5e52e5618afd706302305e8324"
+      }
+    },
+    {
+      "task": "overflow-safe-invoice",
+      "variant": "baseline",
+      "repeat": 1,
+      "passed": true,
+      "status": "COMPLETED",
+      "exitCode": 0,
+      "quality": {
+        "passed": true,
+        "phase": "assertions",
+        "exitCode": 0
+      },
+      "staleEditRejectedWithoutMutation": true,
+      "unrelatedSourcesUnchanged": true,
+      "workflowFailures": [],
+      "unrelatedSourceCount": 1,
+      "historyReadsValidated": 12,
+      "discoveryValidated": true,
+      "requests": 20,
+      "iterations": 20,
+      "contextEstimateBudget": 48000,
+      "processElapsedMs": 2038.4733999999298,
+      "providerUsage": null,
+      "serializedCl100kTokensSum": 323911,
+      "serializedO200kTokensSum": 324494,
+      "serializedUtf8BytesSum": 1332402,
+      "sourceSha256": {
+        "src/Invoice.java": "b906a6dd4c05a7084ea257243412422d14434bef7a9cc4320f750af6f9332723",
+        "src/InvoicePrinter.java": "2a270b7d0688d8bd044b076ec2eb93199cb91642a8ce9fd88506c6104e4c5137",
+        "src/BuildIdentity.java": "a17244896bb058ed58a15f5f4451cde218634b5e52e5618afd706302305e8324"
+      }
+    },
+    {
+      "task": "overflow-safe-invoice",
+      "variant": "compact",
+      "repeat": 1,
+      "passed": true,
+      "status": "COMPLETED",
+      "exitCode": 0,
+      "quality": {
+        "passed": true,
+        "phase": "assertions",
+        "exitCode": 0
+      },
+      "staleEditRejectedWithoutMutation": true,
+      "unrelatedSourcesUnchanged": true,
+      "workflowFailures": [],
+      "unrelatedSourceCount": 1,
+      "historyReadsValidated": 12,
+      "discoveryValidated": true,
+      "requests": 20,
+      "iterations": 20,
+      "contextEstimateBudget": 4000,
+      "processElapsedMs": 1999.7426000009,
+      "providerUsage": null,
+      "serializedCl100kTokensSum": 56285,
+      "serializedO200kTokensSum": 56580,
+      "serializedUtf8BytesSum": 241191,
+      "sourceSha256": {
+        "src/Invoice.java": "b906a6dd4c05a7084ea257243412422d14434bef7a9cc4320f750af6f9332723",
+        "src/InvoicePrinter.java": "2a270b7d0688d8bd044b076ec2eb93199cb91642a8ce9fd88506c6104e4c5137",
+        "src/BuildIdentity.java": "a17244896bb058ed58a15f5f4451cde218634b5e52e5618afd706302305e8324"
+      }
+    },
+    {
+      "task": "literal-delimiter-empty-fields",
+      "variant": "baseline",
+      "repeat": 1,
+      "passed": true,
+      "status": "COMPLETED",
+      "exitCode": 0,
+      "quality": {
+        "passed": true,
+        "phase": "assertions",
+        "exitCode": 0
+      },
+      "staleEditRejectedWithoutMutation": true,
+      "unrelatedSourcesUnchanged": true,
+      "workflowFailures": [],
+      "unrelatedSourceCount": 1,
+      "historyReadsValidated": 12,
+      "discoveryValidated": true,
+      "requests": 20,
+      "iterations": 20,
+      "contextEstimateBudget": 48000,
+      "processElapsedMs": 2085.957299999791,
+      "providerUsage": null,
+      "serializedCl100kTokensSum": 323571,
+      "serializedO200kTokensSum": 324210,
+      "serializedUtf8BytesSum": 1333185,
+      "sourceSha256": {
+        "src/RecordParser.java": "a7d94cd089fdce8663a5aa803e08b40c63cbeeead4bf19878cc8578a28582ec7",
+        "src/RecordValidator.java": "c9ac35e8ebe495719ce72385a8da5de7e8ad352d841fc09ae7be11d09c5a3f62",
+        "src/BuildIdentity.java": "a17244896bb058ed58a15f5f4451cde218634b5e52e5618afd706302305e8324"
+      }
+    },
+    {
+      "task": "literal-delimiter-empty-fields",
+      "variant": "compact",
+      "repeat": 1,
+      "passed": true,
+      "status": "COMPLETED",
+      "exitCode": 0,
+      "quality": {
+        "passed": true,
+        "phase": "assertions",
+        "exitCode": 0
+      },
+      "staleEditRejectedWithoutMutation": true,
+      "unrelatedSourcesUnchanged": true,
+      "workflowFailures": [],
+      "unrelatedSourceCount": 1,
+      "historyReadsValidated": 12,
+      "discoveryValidated": true,
+      "requests": 20,
+      "iterations": 20,
+      "contextEstimateBudget": 4000,
+      "processElapsedMs": 2075.0012999997125,
+      "providerUsage": null,
+      "serializedCl100kTokensSum": 55945,
+      "serializedO200kTokensSum": 56296,
+      "serializedUtf8BytesSum": 241974,
+      "sourceSha256": {
+        "src/RecordParser.java": "a7d94cd089fdce8663a5aa803e08b40c63cbeeead4bf19878cc8578a28582ec7",
+        "src/RecordValidator.java": "c9ac35e8ebe495719ce72385a8da5de7e8ad352d841fc09ae7be11d09c5a3f62",
+        "src/BuildIdentity.java": "a17244896bb058ed58a15f5f4451cde218634b5e52e5618afd706302305e8324"
+      }
+    },
+    {
+      "task": "rename-public-api",
+      "variant": "compact",
+      "repeat": 2,
+      "passed": true,
+      "status": "COMPLETED",
+      "exitCode": 0,
+      "quality": {
+        "passed": true,
+        "phase": "assertions",
+        "exitCode": 0
+      },
+      "staleEditRejectedWithoutMutation": true,
+      "unrelatedSourcesUnchanged": true,
+      "workflowFailures": [],
+      "unrelatedSourceCount": 1,
+      "historyReadsValidated": 12,
+      "discoveryValidated": true,
+      "requests": 20,
+      "iterations": 20,
+      "contextEstimateBudget": 4000,
+      "processElapsedMs": 1951.5648999986297,
+      "providerUsage": null,
+      "serializedCl100kTokensSum": 56489,
+      "serializedO200kTokensSum": 56780,
+      "serializedUtf8BytesSum": 242305,
+      "sourceSha256": {
+        "src/Counter.java": "d892dc62fa0c643c0e506257e949c72ba145eb1ed818e40c1b202ea677988c6d",
+        "src/Report.java": "0222ffef0c787f39a7f117da59bea6846059e55a1a7d0f0ca0a0de5c580a5517",
+        "src/BuildIdentity.java": "a17244896bb058ed58a15f5f4451cde218634b5e52e5618afd706302305e8324"
+      }
+    },
+    {
+      "task": "rename-public-api",
+      "variant": "baseline",
+      "repeat": 2,
+      "passed": true,
+      "status": "COMPLETED",
+      "exitCode": 0,
+      "quality": {
+        "passed": true,
+        "phase": "assertions",
+        "exitCode": 0
+      },
+      "staleEditRejectedWithoutMutation": true,
+      "unrelatedSourcesUnchanged": true,
+      "workflowFailures": [],
+      "unrelatedSourceCount": 1,
+      "historyReadsValidated": 12,
+      "discoveryValidated": true,
+      "requests": 20,
+      "iterations": 20,
+      "contextEstimateBudget": 48000,
+      "processElapsedMs": 1990.2390000006562,
+      "providerUsage": null,
+      "serializedCl100kTokensSum": 322167,
+      "serializedO200kTokensSum": 322744,
+      "serializedUtf8BytesSum": 1325756,
+      "sourceSha256": {
+        "src/Counter.java": "d892dc62fa0c643c0e506257e949c72ba145eb1ed818e40c1b202ea677988c6d",
+        "src/Report.java": "0222ffef0c787f39a7f117da59bea6846059e55a1a7d0f0ca0a0de5c580a5517",
+        "src/BuildIdentity.java": "a17244896bb058ed58a15f5f4451cde218634b5e52e5618afd706302305e8324"
+      }
+    },
+    {
+      "task": "overflow-safe-invoice",
+      "variant": "compact",
+      "repeat": 2,
+      "passed": true,
+      "status": "COMPLETED",
+      "exitCode": 0,
+      "quality": {
+        "passed": true,
+        "phase": "assertions",
+        "exitCode": 0
+      },
+      "staleEditRejectedWithoutMutation": true,
+      "unrelatedSourcesUnchanged": true,
+      "workflowFailures": [],
+      "unrelatedSourceCount": 1,
+      "historyReadsValidated": 12,
+      "discoveryValidated": true,
+      "requests": 20,
+      "iterations": 20,
+      "contextEstimateBudget": 4000,
+      "processElapsedMs": 1982.9351000007591,
+      "providerUsage": null,
+      "serializedCl100kTokensSum": 56285,
+      "serializedO200kTokensSum": 56580,
+      "serializedUtf8BytesSum": 241191,
+      "sourceSha256": {
+        "src/Invoice.java": "b906a6dd4c05a7084ea257243412422d14434bef7a9cc4320f750af6f9332723",
+        "src/InvoicePrinter.java": "2a270b7d0688d8bd044b076ec2eb93199cb91642a8ce9fd88506c6104e4c5137",
+        "src/BuildIdentity.java": "a17244896bb058ed58a15f5f4451cde218634b5e52e5618afd706302305e8324"
+      }
+    },
+    {
+      "task": "overflow-safe-invoice",
+      "variant": "baseline",
+      "repeat": 2,
+      "passed": true,
+      "status": "COMPLETED",
+      "exitCode": 0,
+      "quality": {
+        "passed": true,
+        "phase": "assertions",
+        "exitCode": 0
+      },
+      "staleEditRejectedWithoutMutation": true,
+      "unrelatedSourcesUnchanged": true,
+      "workflowFailures": [],
+      "unrelatedSourceCount": 1,
+      "historyReadsValidated": 12,
+      "discoveryValidated": true,
+      "requests": 20,
+      "iterations": 20,
+      "contextEstimateBudget": 48000,
+      "processElapsedMs": 2021.3039999998728,
+      "providerUsage": null,
+      "serializedCl100kTokensSum": 323911,
+      "serializedO200kTokensSum": 324494,
+      "serializedUtf8BytesSum": 1332402,
+      "sourceSha256": {
+        "src/Invoice.java": "b906a6dd4c05a7084ea257243412422d14434bef7a9cc4320f750af6f9332723",
+        "src/InvoicePrinter.java": "2a270b7d0688d8bd044b076ec2eb93199cb91642a8ce9fd88506c6104e4c5137",
+        "src/BuildIdentity.java": "a17244896bb058ed58a15f5f4451cde218634b5e52e5618afd706302305e8324"
+      }
+    },
+    {
+      "task": "literal-delimiter-empty-fields",
+      "variant": "compact",
+      "repeat": 2,
+      "passed": true,
+      "status": "COMPLETED",
+      "exitCode": 0,
+      "quality": {
+        "passed": true,
+        "phase": "assertions",
+        "exitCode": 0
+      },
+      "staleEditRejectedWithoutMutation": true,
+      "unrelatedSourcesUnchanged": true,
+      "workflowFailures": [],
+      "unrelatedSourceCount": 1,
+      "historyReadsValidated": 12,
+      "discoveryValidated": true,
+      "requests": 20,
+      "iterations": 20,
+      "contextEstimateBudget": 4000,
+      "processElapsedMs": 2063.265799999499,
+      "providerUsage": null,
+      "serializedCl100kTokensSum": 55945,
+      "serializedO200kTokensSum": 56296,
+      "serializedUtf8BytesSum": 241974,
+      "sourceSha256": {
+        "src/RecordParser.java": "a7d94cd089fdce8663a5aa803e08b40c63cbeeead4bf19878cc8578a28582ec7",
+        "src/RecordValidator.java": "c9ac35e8ebe495719ce72385a8da5de7e8ad352d841fc09ae7be11d09c5a3f62",
+        "src/BuildIdentity.java": "a17244896bb058ed58a15f5f4451cde218634b5e52e5618afd706302305e8324"
+      }
+    },
+    {
+      "task": "literal-delimiter-empty-fields",
+      "variant": "baseline",
+      "repeat": 2,
+      "passed": true,
+      "status": "COMPLETED",
+      "exitCode": 0,
+      "quality": {
+        "passed": true,
+        "phase": "assertions",
+        "exitCode": 0
+      },
+      "staleEditRejectedWithoutMutation": true,
+      "unrelatedSourcesUnchanged": true,
+      "workflowFailures": [],
+      "unrelatedSourceCount": 1,
+      "historyReadsValidated": 12,
+      "discoveryValidated": true,
+      "requests": 20,
+      "iterations": 20,
+      "contextEstimateBudget": 48000,
+      "processElapsedMs": 2143.002400000114,
+      "providerUsage": null,
+      "serializedCl100kTokensSum": 323571,
+      "serializedO200kTokensSum": 324210,
+      "serializedUtf8BytesSum": 1333185,
+      "sourceSha256": {
+        "src/RecordParser.java": "a7d94cd089fdce8663a5aa803e08b40c63cbeeead4bf19878cc8578a28582ec7",
+        "src/RecordValidator.java": "c9ac35e8ebe495719ce72385a8da5de7e8ad352d841fc09ae7be11d09c5a3f62",
+        "src/BuildIdentity.java": "a17244896bb058ed58a15f5f4451cde218634b5e52e5618afd706302305e8324"
+      }
+    }
+  ],
+  "summary": {
+    "baseline": {
+      "passed": 6,
+      "runs": 6,
+      "successfulPairedTotals": {
+        "serializedCl100kTokensSum": 1939298,
+        "serializedO200kTokensSum": 1942896,
+        "serializedUtf8BytesSum": 7982686
+      },
+      "medianProcessElapsedMs": 2029.8886999999013
+    },
+    "compact": {
+      "passed": 6,
+      "runs": 6,
+      "successfulPairedTotals": {
+        "serializedCl100kTokensSum": 337438,
+        "serializedO200kTokensSum": 339312,
+        "serializedUtf8BytesSum": 1450940
+      },
+      "medianProcessElapsedMs": 1991.3388500008296
+    }
+  }
+}

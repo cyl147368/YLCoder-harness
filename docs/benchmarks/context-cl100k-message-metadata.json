@@ -1,0 +1,80 @@
+{
+  "benchmarkVersion" : 2,
+  "cases" : [ {
+    "after" : {
+      "messageEstimate" : 795,
+      "messages" : 8,
+      "serializedCl100kTokens" : 751,
+      "serializedO200kTokens" : 757,
+      "serializedUtf8Bytes" : 2844
+    },
+    "before" : {
+      "messageEstimate" : 50647,
+      "messages" : 65,
+      "serializedCl100kTokens" : 50090,
+      "serializedO200kTokens" : 50125,
+      "serializedUtf8Bytes" : 170626
+    },
+    "compactionMs" : {
+      "p50" : 5.387,
+      "p95" : 8.5407
+    },
+    "fixture" : "code-history",
+    "fixtureSha256" : "7abf7e95baf1105429db6e9ebbb3f59df4dbeea8efe4a38c4f74b5d6e00ea80c",
+    "retentionChecks" : "PASS: exact system/original/latest user/current code/call metadata; paired tool cycles"
+  }, {
+    "after" : {
+      "messageEstimate" : 1160,
+      "messages" : 10,
+      "serializedCl100kTokens" : 1098,
+      "serializedO200kTokens" : 1105,
+      "serializedUtf8Bytes" : 4214
+    },
+    "before" : {
+      "messageEstimate" : 60247,
+      "messages" : 65,
+      "serializedCl100kTokens" : 59690,
+      "serializedO200kTokens" : 59725,
+      "serializedUtf8Bytes" : 220756
+    },
+    "compactionMs" : {
+      "p50" : 1.8185,
+      "p95" : 5.0008
+    },
+    "fixture" : "diagnostic-history",
+    "fixtureSha256" : "8426e2504976fb3c028ea6dd04197d66041b24c506fbaaf00cf63757e7be88ad",
+    "retentionChecks" : "PASS: exact system/original/latest user/current code/call metadata; paired tool cycles"
+  }, {
+    "after" : {
+      "messageEstimate" : 376,
+      "messages" : 6,
+      "serializedCl100kTokens" : 350,
+      "serializedO200kTokens" : 355,
+      "serializedUtf8Bytes" : 1466
+    },
+    "before" : {
+      "messageEstimate" : 99611,
+      "messages" : 65,
+      "serializedCl100kTokens" : 99054,
+      "serializedO200kTokens" : 67889,
+      "serializedUtf8Bytes" : 284497
+    },
+    "compactionMs" : {
+      "p50" : 6.9934,
+      "p95" : 13.717
+    },
+    "fixture" : "multilingual-history",
+    "fixtureSha256" : "882d656a76b37498f90e76ca3bcb786cae28d308321cfd938347c1e7625da323",
+    "retentionChecks" : "PASS: exact system/original/latest user/current code/call metadata; paired tool cycles"
+  } ],
+  "environment" : {
+    "java" : "21.0.10",
+    "os" : "Windows 11",
+    "tokenizer" : "jtokkit 1.1.0"
+  },
+  "messageEstimateBudget" : 1200,
+  "samples" : 25,
+  "scope" : "Offline synthetic contexts; includes fixed schema serialization. No model calls or billing claims.",
+  "tokenCounter" : "cl100k",
+  "toolOutputChars" : 1000
+}

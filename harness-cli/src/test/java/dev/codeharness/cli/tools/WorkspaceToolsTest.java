@@ -214,11 +214,13 @@ class WorkspaceToolsTest {
 
     @Test void structuredApprovalExecutesTheApprovedArgvWithoutReplayingShellText() throws Exception {
         Path root = Files.createDirectories(temporary.resolve("direct workspace"));
+        // Windows 临时目录可能使用 8.3 短名称；审批收到的应是同一工作区的规范路径。
+        Path canonicalRoot = root.toRealPath();
         AtomicInteger calls = new AtomicInteger();
         Path java = Path.of(System.getProperty("java.home"), "bin", windows() ? "java.exe" : "java");
         ToolRegistry tools = WorkspaceTools.createWithCommandApproval(root, request -> {
             calls.incrementAndGet();
-            assertEquals(root.toAbsolutePath().normalize(), request.workspace());
+            assertEquals(canonicalRoot, request.workspace());
             assertEquals("echo unexpected > unexpected.txt", request.command());
             return CommandApproval.Decision.direct(List.of(java.toString(), "-version"));
         });

@@ -1,6 +1,6 @@
 # YLCoder-harness
 
-这是一个基于 Java 21 的编程智能体，提供 CLI、可恢复的对话、多种模型协议和受限的工作区工具。最初的工程时间窗口已经结束；已验证的交付证据和剩余差距见 [WORKPLAN.md](WORKPLAN.md)。
+这是一个基于 Java 21 的编程智能体，提供 CLI、可恢复的对话、多种模型协议和受限的工作区工具。已验证结果、复验命令和已知限制见[验证记录](docs/VERIFICATION.md)。
 
 项目名称为 **YLCoder-harness**，日常启动命令为 **`ylc`**。已有用户配置 `~/.code-harness/config.yaml` 和项目会话目录 `.harness` 保持兼容，无需迁移密钥或会话。Java 包名及 Maven 子模块名保留，以兼容现有扩展。
 
@@ -137,4 +137,4 @@ CodeGo 仅用于已归档的真实验证。[configs/codego.example.yaml](configs
 
 `mvn verify` 测试核心行为、模拟厂商契约、配置、会话和文件系统边界。打包冒烟脚本通过实际 jar 执行搜索/读取/编辑，编译并运行临时 Java 文件，再恢复保存的会话。Windows 会跳过需要符号链接权限或 POSIX 权限的测试；Windows junction 包含关系测试会执行。
 
-更多内容见[架构](docs/ARCHITECTURE.md)、[上下文评审](docs/reviews/context.md)和[工作计划](WORKPLAN.md)。
+更多内容见[架构](docs/ARCHITECTURE.md)、[上下文评审](docs/reviews/context.md)和[验证记录](docs/VERIFICATION.md)。

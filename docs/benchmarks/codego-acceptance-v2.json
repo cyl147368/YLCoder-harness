@@ -1,0 +1,1543 @@
+{
+  "archiveVersion": 2,
+  "createdAt": "2026-10-14T09:40:53.096870+00:00",
+  "artifactSha256": "43d272eec8e2087f3e72bb5147cfdec5e2fba00be7614d7fef4dfe0b23d1e3a6",
+  "protocol": {
+    "endpoint": "https://codegoai.com/v1",
+    "model": "gpt-6-sol",
+    "seededSuite": "three tasks x two context estimates (48000/4000) x two reversed-order repeats; max six calls; seeded twelve diagnostic cycles",
+    "latency": "three reversed-order stream/sync repeats; exact stdout/checkpoint/no tools; max one call and 64 output tokens; monotonic Popen-to-first-byte timing",
+    "repository": "two fresh-source miniature repositories x two context estimates (48000/12000), baseline then compact, one repeat; max sixteen calls and 1800 output tokens; four required changed paths; all helpers byte-identical",
+    "independentChecks": "fresh explicit Java 21 compile/run with empty classpath/sourcepath, annotation processing disabled; hidden checks/reference edits excluded from model workspace"
+  },
+  "scopeAndLimits": [
+    "Gateway usage is normalized adapter data, not independently verified billing. Cached input is included in input, not added.",
+    "Seeded repairs and generated 9/10-file miniature repositories do not establish arbitrary production repository quality.",
+    "Requested stream mode accepts JSON fallback; these latency samples do not certify actual SSE media.",
+    "Latency includes JVM/filesystem/network/model/observer scheduling; initial samples may overlap offline compiler/fixture activity. No stable speedup claim.",
+    "First latency report predates cleanup hardening; unchanged Java artifact. Offline post-hardening controls are separate evidence.",
+    "Four checker symlink controls were explicitly skipped on Windows. Linux runtime/remote CI and physical terminal signals remain unverified.",
+    "Original ten-hour window was missed; no ten-hour active-compute claim. Earlier failures remain in archive v1.",
+    "Verification uses private dependencies, not an OS sandbox. No automatic paid retry was introduced."
+  ],
+  "sourceReportSha256": {
+    "orderBalanced": "1bd4eb2711c72a48b2276041c37ed1ef6c91acfa939c3eafd9c3446b03c5c9e9",
+    "firstVisibleLatency": "f93a15a23d087bb99f4017a37bc463d1b8b56a170e0856fc366397ad3f11b6e2",
+    "repositoryRepairs": "fee53b8fb7de91b7b51a96eaa0cb415cea8b8288398023124d3e612f51f8a85d",
+    "offlineRepository": "e86ee19805a098d470b4677f06ba7867397b8ada759ab548b37e1b7b85ec9dc9",
+    "offlineLatencyControls": "bf6ed4f349db7a0e248dd2e5ef1015f2d2fb106eefa550202fff3a3a6a133553"
+  },
+  "summary": {
+    "seededPassed": "12/12",
+    "successfulPairs": 6,
+    "seededInputReductionFraction": 0.721660237460213,
+    "seededUsage": {
+      "baseline": {
+        "inputTokens": 352817,
+        "outputTokens": 1648,
+        "cachedInputTokens": 326784
+      },
+      "compact": {
+        "inputTokens": 98203,
+        "outputTokens": 1858,
+        "cachedInputTokens": 93696
+      }
+    },
+    "latency": {
+      "stream": {
+        "samples": 3,
+        "medianFirstVisibleTextMs": 7645.2337,
+        "medianProcessCompletionMs": 8161.2762
+      },
+      "sync": {
+        "samples": 3,
+        "medianFirstVisibleTextMs": 6545.3532,
+        "medianProcessCompletionMs": 7050.436
+      }
+    },
+    "repositoryPassed": "4/4",
+    "repositoryUsage": {
+      "baseline": {
+        "inputTokens": 124143,
+        "outputTokens": 2425,
+        "cachedInputTokens": 96640
+      },
+      "compact": {
+        "inputTokens": 123135,
+        "outputTokens": 2254,
+        "cachedInputTokens": 95360
+      }
+    }
+  },
+  "reports": {
+    "orderBalanced": {
+      "evaluationVersion": 3,
+      "mode": "live",
+      "createdAt": "2026-10-14T09:18:41.081895+00:00",
+      "artifactSha256": "43d272eec8e2087f3e72bb5147cfdec5e2fba00be7614d7fef4dfe0b23d1e3a6",
+      "evaluatorSha256": "92f7614dd5dc59a0f4d3278cc4031c4c17fa5db6beb9f98af122c49d0f62044b",
+      "provider": "openai-compatible",
+      "model": "gpt-6-sol",
+      "streamingRequested": true,
+      "scope": "Selected small Java repairs with independent compile/assertion checks. Live results cover only this seeded replay workload; offline policy supplies scripted edits. Neither establishes broad coding quality, vendor billing or production speedup.",
+      "selectedTasks": [
+        "inclusive-range",
+        "empty-average",
+        "null-blank"
+      ],
+      "liveWorkload": "Identical seeded diagnostic/source replay context; fixed 12 historical tool cycles",
+      "liveTaskPolicy": "No shell or unrelated edits; independent compiler/assertions run after agent exit.",
+      "checkerControls": [
+        {
+          "task": "inclusive-range",
+          "rejectsBuggyAndAcceptsRepair": true
+        },
+        {
+          "task": "empty-average",
+          "rejectsBuggyAndAcceptsRepair": true
+        },
+        {
+          "task": "null-blank",
+          "rejectsBuggyAndAcceptsRepair": true
+        }
+      ],
+      "firstTextLatencyMs": null,
+      "firstTextLatencyNote": "Not measured by JSON subprocess runner; use streaming smoke for early-delivery contract only.",
+      "passed": true,
+      "runs": [
+        {
+          "task": "inclusive-range",
+          "variant": "baseline",
+          "repeat": 1,
+          "contextEstimateBudget": 48000,
+          "status": "COMPLETED",
+          "exitCode": 0,
+          "quality": {
+            "passed": true,
+            "phase": "assertions",
+            "exitCode": 0
+          },
+          "passed": true,
+          "iterations": 2,
+          "agentError": "",
+          "retainedToolNamesAfterSeed": [
+            "edit_file"
+          ],
+          "retainedToolFailuresAfterSeed": 0,
+          "toolTraceScope": "Final compacted checkpoint only; earlier tool cycles may be removed.",
+          "processElapsedMs": 15254.272900001524,
+          "agentElapsedMs": 14146,
+          "providerUsage": {
+            "inputTokens": 54126,
+            "outputTokens": 134,
+            "cachedInputTokens": 53504
+          },
+          "usageAvailability": "adapter-reported; zero may mean missing",
+          "serializedCl100kTokensSum": null,
+          "serializedO200kTokensSum": null,
+          "serializedUtf8BytesSum": null,
+          "requests": null,
+          "currentSourceRetained": null,
+          "sourceSha256": "4e4358a2d52a7090827e53165266caacdbacbdbffcf547de7e5f3ff43508a163",
+          "executionOrdinal": 1,
+          "pairOrder": [
+            "baseline",
+            "compact"
+          ]
+        },
+        {
+          "task": "inclusive-range",
+          "variant": "compact",
+          "repeat": 1,
+          "contextEstimateBudget": 4000,
+          "status": "COMPLETED",
+          "exitCode": 0,
+          "quality": {
+            "passed": true,
+            "phase": "assertions",
+            "exitCode": 0
+          },
+          "passed": true,
+          "iterations": 2,
+          "agentError": "",
+          "retainedToolNamesAfterSeed": [
+            "edit_file"
+          ],
+          "retainedToolFailuresAfterSeed": 0,
+          "toolTraceScope": "Final compacted checkpoint only; earlier tool cycles may be removed.",
+          "processElapsedMs": 12909.284099998331,
+          "agentElapsedMs": 11812,
+          "providerUsage": {
+            "inputTokens": 13901,
+            "outputTokens": 194,
+            "cachedInputTokens": 13312
+          },
+          "usageAvailability": "adapter-reported; zero may mean missing",
+          "serializedCl100kTokensSum": null,
+          "serializedO200kTokensSum": null,
+          "serializedUtf8BytesSum": null,
+          "requests": null,
+          "currentSourceRetained": null,
+          "sourceSha256": "4e4358a2d52a7090827e53165266caacdbacbdbffcf547de7e5f3ff43508a163",
+          "executionOrdinal": 2,
+          "pairOrder": [
+            "baseline",
+            "compact"
+          ]
+        },
+        {
+          "task": "empty-average",
+          "variant": "baseline",
+          "repeat": 1,
+          "contextEstimateBudget": 48000,
+          "status": "COMPLETED",
+          "exitCode": 0,
+          "quality": {
+            "passed": true,
+            "phase": "assertions",
+            "exitCode": 0
+          },
+          "passed": true,
+          "iterations": 2,
+          "agentError": "",
+          "retainedToolNamesAfterSeed": [
+            "edit_file"
+          ],
+          "retainedToolFailuresAfterSeed": 0,
+          "toolTraceScope": "Final compacted checkpoint only; earlier tool cycles may be removed.",
+          "processElapsedMs": 17117.442599999777,
+          "agentElapsedMs": 16042,
+          "providerUsage": {
+            "inputTokens": 54277,
+            "outputTokens": 235,
+            "cachedInputTokens": 31488
+          },
+          "usageAvailability": "adapter-reported; zero may mean missing",
+          "serializedCl100kTokensSum": null,
+          "serializedO200kTokensSum": null,
+          "serializedUtf8BytesSum": null,
+          "requests": null,
+          "currentSourceRetained": null,
+          "sourceSha256": "8a01759299c8c6eeffa0ad95197a3113cbbd561a068297b008a25caa543eee62",
+          "executionOrdinal": 3,
+          "pairOrder": [
+            "baseline",
+            "compact"
+          ]
+        },
+        {
+          "task": "empty-average",
+          "variant": "compact",
+          "repeat": 1,
+          "contextEstimateBudget": 4000,
+          "status": "COMPLETED",
+          "exitCode": 0,
+          "quality": {
+            "passed": true,
+            "phase": "assertions",
+            "exitCode": 0
+          },
+          "passed": true,
+          "iterations": 2,
+          "agentError": "",
+          "retainedToolNamesAfterSeed": [
+            "edit_file"
+          ],
+          "retainedToolFailuresAfterSeed": 0,
+          "toolTraceScope": "Final compacted checkpoint only; earlier tool cycles may be removed.",
+          "processElapsedMs": 15281.029300000228,
+          "agentElapsedMs": 14190,
+          "providerUsage": {
+            "inputTokens": 14001,
+            "outputTokens": 257,
+            "cachedInputTokens": 13312
+          },
+          "usageAvailability": "adapter-reported; zero may mean missing",
+          "serializedCl100kTokensSum": null,
+          "serializedO200kTokensSum": null,
+          "serializedUtf8BytesSum": null,
+          "requests": null,
+          "currentSourceRetained": null,
+          "sourceSha256": "8a01759299c8c6eeffa0ad95197a3113cbbd561a068297b008a25caa543eee62",
+          "executionOrdinal": 4,
+          "pairOrder": [
+            "baseline",
+            "compact"
+          ]
+        },
+        {
+          "task": "null-blank",
+          "variant": "baseline",
+          "repeat": 1,
+          "contextEstimateBudget": 48000,
+          "status": "COMPLETED",
+          "exitCode": 0,
+          "quality": {
+            "passed": true,
+            "phase": "assertions",
+            "exitCode": 0
+          },
+          "passed": true,
+          "iterations": 2,
+          "agentError": "",
+          "retainedToolNamesAfterSeed": [
+            "edit_file"
+          ],
+          "retainedToolFailuresAfterSeed": 0,
+          "toolTraceScope": "Final compacted checkpoint only; earlier tool cycles may be removed.",
+          "processElapsedMs": 20098.610400000325,
+          "agentElapsedMs": 18960,
+          "providerUsage": {
+            "inputTokens": 54283,
+            "outputTokens": 321,
+            "cachedInputTokens": 53760
+          },
+          "usageAvailability": "adapter-reported; zero may mean missing",
+          "serializedCl100kTokensSum": null,
+          "serializedO200kTokensSum": null,
+          "serializedUtf8BytesSum": null,
+          "requests": null,
+          "currentSourceRetained": null,
+          "sourceSha256": "6222219f263a5181092bb621c3d09b60790a9bd9220d7182b43248f4aa21cc4a",
+          "executionOrdinal": 5,
+          "pairOrder": [
+            "baseline",
+            "compact"
+          ]
+        },
+        {
+          "task": "null-blank",
+          "variant": "compact",
+          "repeat": 1,
+          "contextEstimateBudget": 4000,
+          "status": "COMPLETED",
+          "exitCode": 0,
+          "quality": {
+            "passed": true,
+            "phase": "assertions",
+            "exitCode": 0
+          },
+          "passed": true,
+          "iterations": 4,
+          "agentError": "",
+          "retainedToolNamesAfterSeed": [
+            "edit_file",
+            "read_file",
+            "edit_file"
+          ],
+          "retainedToolFailuresAfterSeed": 1,
+          "toolTraceScope": "Final compacted checkpoint only; earlier tool cycles may be removed.",
+          "processElapsedMs": 34453.933299999335,
+          "agentElapsedMs": 33227,
+          "providerUsage": {
+            "inputTokens": 28368,
+            "outputTokens": 550,
+            "cachedInputTokens": 27136
+          },
+          "usageAvailability": "adapter-reported; zero may mean missing",
+          "serializedCl100kTokensSum": null,
+          "serializedO200kTokensSum": null,
+          "serializedUtf8BytesSum": null,
+          "requests": null,
+          "currentSourceRetained": null,
+          "sourceSha256": "6b1bf01b731333d55bc6a13efa1c763e51316ec12ab5e5dc06c9912f1a2f3ec8",
+          "executionOrdinal": 6,
+          "pairOrder": [
+            "baseline",
+            "compact"
+          ]
+        },
+        {
+          "task": "inclusive-range",
+          "variant": "compact",
+          "repeat": 2,
+          "contextEstimateBudget": 4000,
+          "status": "COMPLETED",
+          "exitCode": 0,
+          "quality": {
+            "passed": true,
+            "phase": "assertions",
+            "exitCode": 0
+          },
+          "passed": true,
+          "iterations": 2,
+          "agentError": "",
+          "retainedToolNamesAfterSeed": [
+            "edit_file"
+          ],
+          "retainedToolFailuresAfterSeed": 0,
+          "toolTraceScope": "Final compacted checkpoint only; earlier tool cycles may be removed.",
+          "processElapsedMs": 17199.219699999958,
+          "agentElapsedMs": 15887,
+          "providerUsage": {
+            "inputTokens": 13897,
+            "outputTokens": 184,
+            "cachedInputTokens": 13312
+          },
+          "usageAvailability": "adapter-reported; zero may mean missing",
+          "serializedCl100kTokensSum": null,
+          "serializedO200kTokensSum": null,
+          "serializedUtf8BytesSum": null,
+          "requests": null,
+          "currentSourceRetained": null,
+          "sourceSha256": "4e4358a2d52a7090827e53165266caacdbacbdbffcf547de7e5f3ff43508a163",
+          "executionOrdinal": 7,
+          "pairOrder": [
+            "compact",
+            "baseline"
+          ]
+        },
+        {
+          "task": "inclusive-range",
+          "variant": "baseline",
+          "repeat": 2,
+          "contextEstimateBudget": 48000,
+          "status": "COMPLETED",
+          "exitCode": 0,
+          "quality": {
+            "passed": true,
+            "phase": "assertions",
+            "exitCode": 0
+          },
+          "passed": true,
+          "iterations": 2,
+          "agentError": "",
+          "retainedToolNamesAfterSeed": [
+            "edit_file"
+          ],
+          "retainedToolFailuresAfterSeed": 0,
+          "toolTraceScope": "Final compacted checkpoint only; earlier tool cycles may be removed.",
+          "processElapsedMs": 14293.008900000132,
+          "agentElapsedMs": 13169,
+          "providerUsage": {
+            "inputTokens": 54129,
+            "outputTokens": 169,
+            "cachedInputTokens": 53504
+          },
+          "usageAvailability": "adapter-reported; zero may mean missing",
+          "serializedCl100kTokensSum": null,
+          "serializedO200kTokensSum": null,
+          "serializedUtf8BytesSum": null,
+          "requests": null,
+          "currentSourceRetained": null,
+          "sourceSha256": "4e4358a2d52a7090827e53165266caacdbacbdbffcf547de7e5f3ff43508a163",
+          "executionOrdinal": 8,
+          "pairOrder": [
+            "compact",
+            "baseline"
+          ]
+        },
+        {
+          "task": "empty-average",
+          "variant": "compact",
+          "repeat": 2,
+          "contextEstimateBudget": 4000,
+          "status": "COMPLETED",
+          "exitCode": 0,
+          "quality": {
+            "passed": true,
+            "phase": "assertions",
+            "exitCode": 0
+          },
+          "passed": true,
+          "iterations": 2,
+          "agentError": "",
+          "retainedToolNamesAfterSeed": [
+            "edit_file"
+          ],
+          "retainedToolFailuresAfterSeed": 0,
+          "toolTraceScope": "Final compacted checkpoint only; earlier tool cycles may be removed.",
+          "processElapsedMs": 14951.326099999278,
+          "agentElapsedMs": 13856,
+          "providerUsage": {
+            "inputTokens": 14011,
+            "outputTokens": 250,
+            "cachedInputTokens": 13312
+          },
+          "usageAvailability": "adapter-reported; zero may mean missing",
+          "serializedCl100kTokensSum": null,
+          "serializedO200kTokensSum": null,
+          "serializedUtf8BytesSum": null,
+          "requests": null,
+          "currentSourceRetained": null,
+          "sourceSha256": "8a01759299c8c6eeffa0ad95197a3113cbbd561a068297b008a25caa543eee62",
+          "executionOrdinal": 9,
+          "pairOrder": [
+            "compact",
+            "baseline"
+          ]
+        },
+        {
+          "task": "empty-average",
+          "variant": "baseline",
+          "repeat": 2,
+          "contextEstimateBudget": 48000,
+          "status": "COMPLETED",
+          "exitCode": 0,
+          "quality": {
+            "passed": true,
+            "phase": "assertions",
+            "exitCode": 0
+          },
+          "passed": true,
+          "iterations": 2,
+          "agentError": "",
+          "retainedToolNamesAfterSeed": [
+            "edit_file"
+          ],
+          "retainedToolFailuresAfterSeed": 0,
+          "toolTraceScope": "Final compacted checkpoint only; earlier tool cycles may be removed.",
+          "processElapsedMs": 17529.807300001266,
+          "agentElapsedMs": 16453,
+          "providerUsage": {
+            "inputTokens": 54303,
+            "outputTokens": 254,
+            "cachedInputTokens": 53760
+          },
+          "usageAvailability": "adapter-reported; zero may mean missing",
+          "serializedCl100kTokensSum": null,
+          "serializedO200kTokensSum": null,
+          "serializedUtf8BytesSum": null,
+          "requests": null,
+          "currentSourceRetained": null,
+          "sourceSha256": "2cefd2b2b85010e3e472b8c9f2ce3a6c787aa74a9845b54a07002d0cd64b6897",
+          "executionOrdinal": 10,
+          "pairOrder": [
+            "compact",
+            "baseline"
+          ]
+        },
+        {
+          "task": "null-blank",
+          "variant": "compact",
+          "repeat": 2,
+          "contextEstimateBudget": 4000,
+          "status": "COMPLETED",
+          "exitCode": 0,
+          "quality": {
+            "passed": true,
+            "phase": "assertions",
+            "exitCode": 0
+          },
+          "passed": true,
+          "iterations": 2,
+          "agentError": "",
+          "retainedToolNamesAfterSeed": [
+            "edit_file"
+          ],
+          "retainedToolFailuresAfterSeed": 0,
+          "toolTraceScope": "Final compacted checkpoint only; earlier tool cycles may be removed.",
+          "processElapsedMs": 23401.05009999752,
+          "agentElapsedMs": 22296,
+          "providerUsage": {
+            "inputTokens": 14025,
+            "outputTokens": 423,
+            "cachedInputTokens": 13312
+          },
+          "usageAvailability": "adapter-reported; zero may mean missing",
+          "serializedCl100kTokensSum": null,
+          "serializedO200kTokensSum": null,
+          "serializedUtf8BytesSum": null,
+          "requests": null,
+          "currentSourceRetained": null,
+          "sourceSha256": "6222219f263a5181092bb621c3d09b60790a9bd9220d7182b43248f4aa21cc4a",
+          "executionOrdinal": 11,
+          "pairOrder": [
+            "compact",
+            "baseline"
+          ]
+        },
+        {
+          "task": "null-blank",
+          "variant": "baseline",
+          "repeat": 2,
+          "contextEstimateBudget": 48000,
+          "status": "COMPLETED",
+          "exitCode": 0,
+          "quality": {
+            "passed": true,
+            "phase": "assertions",
+            "exitCode": 0
+          },
+          "passed": true,
+          "iterations": 3,
+          "agentError": "",
+          "retainedToolNamesAfterSeed": [
+            "edit_file",
+            "edit_file"
+          ],
+          "retainedToolFailuresAfterSeed": 0,
+          "toolTraceScope": "Final compacted checkpoint only; earlier tool cycles may be removed.",
+          "processElapsedMs": 41024.346300000616,
+          "agentElapsedMs": 39909,
+          "providerUsage": {
+            "inputTokens": 81699,
+            "outputTokens": 535,
+            "cachedInputTokens": 80768
+          },
+          "usageAvailability": "adapter-reported; zero may mean missing",
+          "serializedCl100kTokensSum": null,
+          "serializedO200kTokensSum": null,
+          "serializedUtf8BytesSum": null,
+          "requests": null,
+          "currentSourceRetained": null,
+          "sourceSha256": "6b1bf01b731333d55bc6a13efa1c763e51316ec12ab5e5dc06c9912f1a2f3ec8",
+          "executionOrdinal": 12,
+          "pairOrder": [
+            "compact",
+            "baseline"
+          ]
+        }
+      ],
+      "pairs": [
+        {
+          "task": "inclusive-range",
+          "repeat": 1,
+          "bothPassed": true,
+          "sameSource": true
+        },
+        {
+          "task": "empty-average",
+          "repeat": 1,
+          "bothPassed": true,
+          "sameSource": true
+        },
+        {
+          "task": "null-blank",
+          "repeat": 1,
+          "bothPassed": true,
+          "sameSource": false
+        },
+        {
+          "task": "inclusive-range",
+          "repeat": 2,
+          "bothPassed": true,
+          "sameSource": true
+        },
+        {
+          "task": "empty-average",
+          "repeat": 2,
+          "bothPassed": true,
+          "sameSource": false
+        },
+        {
+          "task": "null-blank",
+          "repeat": 2,
+          "bothPassed": true,
+          "sameSource": false
+        }
+      ],
+      "matchedSuccessfulPairs": 6,
+      "executionOrderPolicy": "Odd repetitions baseline/compact; even repetitions compact/baseline. Fixed task order, serial calls; no automatic retries.",
+      "matchedProviderUsage": {
+        "baseline": {
+          "inputTokens": 352817,
+          "outputTokens": 1648,
+          "cachedInputTokens": 326784
+        },
+        "compact": {
+          "inputTokens": 98203,
+          "outputTokens": 1858,
+          "cachedInputTokens": 93696
+        }
+      },
+      "summary": {
+        "baseline": {
+          "passed": 6,
+          "runs": 6,
+          "medianProcessElapsedMs": 17323.62495000052
+        },
+        "compact": {
+          "passed": 6,
+          "runs": 6,
+          "medianProcessElapsedMs": 16240.124500000093
+        }
+      }
+    },
+    "firstVisibleLatency": {
+      "measurementVersion": 1,
+      "passed": true,
+      "createdAt": "2026-10-14T09:23:56.624470+00:00",
+      "baseUrl": "https://codegoai.com/v1",
+      "model": "gpt-6-sol",
+      "repeat": 3,
+      "scope": "actual Java CLI subprocess stdout timing; requested mode does not prove SSE transport",
+      "runnerSha256": "44a182e8c11890cc06b3025ae7084fd6f3f1b0bc0b8780aa21650ea3ad551db0",
+      "samples": [
+        {
+          "requestedMode": "stream",
+          "passed": true,
+          "firstVisibleTextMs": 7760.6934,
+          "processCompletionMs": 8289.3049,
+          "status": "COMPLETED",
+          "usage": {
+            "totalTokens": 4884,
+            "inputTokens": null,
+            "outputTokens": null,
+            "cachedInputTokens": null
+          },
+          "usageAvailability": "CLI combined adapter-normalized total only; components unavailable; zero may mean missing; not billing-verified",
+          "errorCategory": null,
+          "checks": {
+            "firstVisibleBytes": true,
+            "validTimingOrder": true,
+            "exactStdout": true,
+            "profileUnchanged": true,
+            "workspaceAllowlist": true,
+            "oneCheckpoint": true,
+            "oneExactAnswer": true,
+            "zeroTools": true,
+            "completed": true,
+            "sessionIdentity": true
+          },
+          "artifactSha256": "43d272eec8e2087f3e72bb5147cfdec5e2fba00be7614d7fef4dfe0b23d1e3a6",
+          "profileSha256": "6f65bfd9e08d692820a44ef3834f434f6dcefb5e64634d6c040fa8ed210411b7",
+          "exitCode": 0,
+          "repeat": 1
+        },
+        {
+          "requestedMode": "sync",
+          "passed": true,
+          "firstVisibleTextMs": 6545.3532,
+          "processCompletionMs": 7050.436,
+          "status": "COMPLETED",
+          "usage": {
+            "totalTokens": 4884,
+            "inputTokens": null,
+            "outputTokens": null,
+            "cachedInputTokens": null
+          },
+          "usageAvailability": "CLI combined adapter-normalized total only; components unavailable; zero may mean missing; not billing-verified",
+          "errorCategory": null,
+          "checks": {
+            "firstVisibleBytes": true,
+            "validTimingOrder": true,
+            "exactStdout": true,
+            "profileUnchanged": true,
+            "workspaceAllowlist": true,
+            "oneCheckpoint": true,
+            "oneExactAnswer": true,
+            "zeroTools": true,
+            "completed": true,
+            "sessionIdentity": true
+          },
+          "artifactSha256": "43d272eec8e2087f3e72bb5147cfdec5e2fba00be7614d7fef4dfe0b23d1e3a6",
+          "profileSha256": "6f65bfd9e08d692820a44ef3834f434f6dcefb5e64634d6c040fa8ed210411b7",
+          "exitCode": 0,
+          "repeat": 1
+        },
+        {
+          "requestedMode": "sync",
+          "passed": true,
+          "firstVisibleTextMs": 5951.528,
+          "processCompletionMs": 6451.6091,
+          "status": "COMPLETED",
+          "usage": {
+            "totalTokens": 4884,
+            "inputTokens": null,
+            "outputTokens": null,
+            "cachedInputTokens": null
+          },
+          "usageAvailability": "CLI combined adapter-normalized total only; components unavailable; zero may mean missing; not billing-verified",
+          "errorCategory": null,
+          "checks": {
+            "firstVisibleBytes": true,
+            "validTimingOrder": true,
+            "exactStdout": true,
+            "profileUnchanged": true,
+            "workspaceAllowlist": true,
+            "oneCheckpoint": true,
+            "oneExactAnswer": true,
+            "zeroTools": true,
+            "completed": true,
+            "sessionIdentity": true
+          },
+          "artifactSha256": "43d272eec8e2087f3e72bb5147cfdec5e2fba00be7614d7fef4dfe0b23d1e3a6",
+          "profileSha256": "6f65bfd9e08d692820a44ef3834f434f6dcefb5e64634d6c040fa8ed210411b7",
+          "exitCode": 0,
+          "repeat": 2
+        },
+        {
+          "requestedMode": "stream",
+          "passed": true,
+          "firstVisibleTextMs": 4646.9751,
+          "processCompletionMs": 5174.8125,
+          "status": "COMPLETED",
+          "usage": {
+            "totalTokens": 4884,
+            "inputTokens": null,
+            "outputTokens": null,
+            "cachedInputTokens": null
+          },
+          "usageAvailability": "CLI combined adapter-normalized total only; components unavailable; zero may mean missing; not billing-verified",
+          "errorCategory": null,
+          "checks": {
+            "firstVisibleBytes": true,
+            "validTimingOrder": true,
+            "exactStdout": true,
+            "profileUnchanged": true,
+            "workspaceAllowlist": true,
+            "oneCheckpoint": true,
+            "oneExactAnswer": true,
+            "zeroTools": true,
+            "completed": true,
+            "sessionIdentity": true
+          },
+          "artifactSha256": "43d272eec8e2087f3e72bb5147cfdec5e2fba00be7614d7fef4dfe0b23d1e3a6",
+          "profileSha256": "6f65bfd9e08d692820a44ef3834f434f6dcefb5e64634d6c040fa8ed210411b7",
+          "exitCode": 0,
+          "repeat": 2
+        },
+        {
+          "requestedMode": "stream",
+          "passed": true,
+          "firstVisibleTextMs": 7645.2337,
+          "processCompletionMs": 8161.2762,
+          "status": "COMPLETED",
+          "usage": {
+            "totalTokens": 4884,
+            "inputTokens": null,
+            "outputTokens": null,
+            "cachedInputTokens": null
+          },
+          "usageAvailability": "CLI combined adapter-normalized total only; components unavailable; zero may mean missing; not billing-verified",
+          "errorCategory": null,
+          "checks": {
+            "firstVisibleBytes": true,
+            "validTimingOrder": true,
+            "exactStdout": true,
+            "profileUnchanged": true,
+            "workspaceAllowlist": true,
+            "oneCheckpoint": true,
+            "oneExactAnswer": true,
+            "zeroTools": true,
+            "completed": true,
+            "sessionIdentity": true
+          },
+          "artifactSha256": "43d272eec8e2087f3e72bb5147cfdec5e2fba00be7614d7fef4dfe0b23d1e3a6",
+          "profileSha256": "6f65bfd9e08d692820a44ef3834f434f6dcefb5e64634d6c040fa8ed210411b7",
+          "exitCode": 0,
+          "repeat": 3
+        },
+        {
+          "requestedMode": "sync",
+          "passed": true,
+          "firstVisibleTextMs": 7016.6775,
+          "processCompletionMs": 7521.0194,
+          "status": "COMPLETED",
+          "usage": {
+            "totalTokens": 4884,
+            "inputTokens": null,
+            "outputTokens": null,
+            "cachedInputTokens": null
+          },
+          "usageAvailability": "CLI combined adapter-normalized total only; components unavailable; zero may mean missing; not billing-verified",
+          "errorCategory": null,
+          "checks": {
+            "firstVisibleBytes": true,
+            "validTimingOrder": true,
+            "exactStdout": true,
+            "profileUnchanged": true,
+            "workspaceAllowlist": true,
+            "oneCheckpoint": true,
+            "oneExactAnswer": true,
+            "zeroTools": true,
+            "completed": true,
+            "sessionIdentity": true
+          },
+          "artifactSha256": "43d272eec8e2087f3e72bb5147cfdec5e2fba00be7614d7fef4dfe0b23d1e3a6",
+          "profileSha256": "6f65bfd9e08d692820a44ef3834f434f6dcefb5e64634d6c040fa8ed210411b7",
+          "exitCode": 0,
+          "repeat": 3
+        }
+      ]
+    },
+    "repositoryRepairs": {
+      "evaluationVersion": 1,
+      "mode": "live-miniature-repository",
+      "createdAt": "2026-10-14T09:39:29.096416+00:00",
+      "scope": "Related-file Java repairs on generated miniature repositories; actual live model patches are independently compiled/asserted. Offline policy supplies known patches. No broad repository/billing/speed claim.",
+      "artifactSha256": "43d272eec8e2087f3e72bb5147cfdec5e2fba00be7614d7fef4dfe0b23d1e3a6",
+      "evaluatorSha256": "85e32e955b75d62aad02f633c36f931f68b29aa75f14aab29c41b0c6b016321c",
+      "fixtureSha256": "3a7cc1f7ddf1877e0ac9ee39ceebbbad5ad877d189eed9cb9b34bc52c9bca591",
+      "checkerSha256": "90a045b74695362aaa07bbdc6cee9995a134017023c2d3a6d1ed0247902491f2",
+      "provider": "openai-compatible",
+      "model": "gpt-6-sol",
+      "baseUrl": "https://codegoai.com/v1",
+      "outputLimit": 1800,
+      "maxIterations": 16,
+      "taskMetadata": [
+        {
+          "id": "checkout-precision",
+          "sourceFiles": 9,
+          "sourceLines": 177,
+          "requiredChangedPaths": [
+            "src/shop/CartLine.java",
+            "src/shop/PriceCalculator.java",
+            "src/shop/DiscountPolicy.java",
+            "src/shop/ReceiptRenderer.java"
+          ],
+          "unchangedPaths": [
+            "src/shop/BuildInfo.java"
+          ],
+          "prompt": "Repair the shop checkout repository without changing public API names or receipt format.\nCart quantities must be 1..1000 inclusive. Price each line using exact long-cent arithmetic,\nreject arithmetic overflow, and preserve cart order/input data. Discount eligibility includes the\nthreshold itself; calculate floor(subtotal * percent / 100) exactly without overflowing even at\nLong.MAX_VALUE, for percentages 0..100. Render all nonnegative money with exactly two decimal\ndigits, independent of locale, including one-cent totals and Long.MAX_VALUE. Preserve immutable\nreceipts, unknown-SKU rejection, empty-cart totals and existing validation. Verify regression\ncases across pricing, discounts and rendering. Keep BuildInfo.java byte-identical and preserve\nunrelated source behavior. Keep the declared source-file set; do not add or delete source files.\nDo not add external dependencies or use network/process/environment IO."
+        },
+        {
+          "id": "ingestion-integrity",
+          "sourceFiles": 10,
+          "sourceLines": 174,
+          "requiredChangedPaths": [
+            "src/ingest/Tokenizer.java",
+            "src/ingest/RecordParser.java",
+            "src/ingest/BatchAccumulator.java",
+            "src/ingest/ReportRenderer.java"
+          ],
+          "unchangedPaths": [
+            "src/ingest/InputRow.java",
+            "src/ingest/BuildInfo.java"
+          ],
+          "prompt": "Repair the ingest repository while retaining public API names. Treat every nonempty\ndelimiter literally, including regex characters and multi-character delimiters, and preserve\ntrailing empty fields. Records require exactly three fields: ID matching [A-Z][A-Z0-9]{2,11},\na nonblank label preserved without trimming, and unsigned plain decimal currency with at most\ntwo fraction digits. Convert to long cents exactly, reject unrepresentable cents, and support\nzero and Long.MAX_VALUE cents. Accept the first valid record for each ID; reject every duplicate\nwithout replacing it or changing totals. Overflowing additions also leave accumulated state\nunchanged. Preserve input order and report rejection line numbers in order while continuing\nafter invalid rows. Output uses pipe-separated records; escape backslashes by doubling them\nand pipes by prefixing a backslash. Preserve immutable reports and empty-import behavior.\nKeep InputRow.java and BuildInfo.java byte-identical. Verify fractional, duplicate, overflow, literal delimiter and\nescaping regressions. Keep the declared source-file set; do not add or delete source files.\nDo not add dependencies or use network/process/environment IO."
+        }
+      ],
+      "passed": true,
+      "runs": [
+        {
+          "task": "checkout-precision",
+          "variant": "baseline",
+          "repeat": 1,
+          "passed": true,
+          "status": "COMPLETED",
+          "exitCode": 0,
+          "quality": {
+            "passed": true,
+            "phase": "assertions",
+            "exitCode": 0,
+            "declaredSourcesExact": true,
+            "unchangedCount": 1,
+            "unchangedSources": {
+              "src/shop/BuildInfo.java": {
+                "unchanged": true,
+                "sha256": "822d4e253f85fcd7e3b00aa9d8cc61b67615dd3de34e558ea616aea08c367952"
+              }
+            }
+          },
+          "requiredFilesChanged": true,
+          "exactChangedPaths": true,
+          "unrelatedSourcesUnchanged": true,
+          "workspaceAllowlist": true,
+          "changedPaths": [
+            "src/shop/CartLine.java",
+            "src/shop/DiscountPolicy.java",
+            "src/shop/PriceCalculator.java",
+            "src/shop/ReceiptRenderer.java"
+          ],
+          "iterations": 8,
+          "agentError": "",
+          "processElapsedMs": 65536.81209999922,
+          "agentElapsedMs": 64463,
+          "contextEstimateBudget": 48000,
+          "providerUsage": {
+            "inputTokens": 58322,
+            "outputTokens": 1221,
+            "cachedInputTokens": 45824
+          },
+          "usageAvailability": "adapter-reported; zero may mean missing; billing not verified",
+          "offlineRequests": null,
+          "offlineFailures": [],
+          "sourceSha256": {
+            "src/shop/CartLine.java": "f116e82553b84c4d2e61a086e65ef6c75ae09f9f169fe8b1185620faf860fb80",
+            "src/shop/Catalog.java": "f70c4f95f02756fa7c16a501f031ad6001d216220cf81cb1d05d2330ba74c9f1",
+            "src/shop/DiscountPolicy.java": "f969ea82e3720a6582bf2641ee71fbea266dc3229a6fbe29ed27f0ad98215577",
+            "src/shop/PricedLine.java": "2e431a9c3c88bb00949f9e463796b5c397a141762f1a81bb4be0e3a704ec6361",
+            "src/shop/PriceCalculator.java": "3008ed7d0e45381ff83f7176cb3fd04b0676fa20fa975211ec07542d13bc4e7f",
+            "src/shop/Receipt.java": "6df1b2f0ac31c4dcf4afb6cbd193280d9a374c46f71eac0a7b92890a280cf240",
+            "src/shop/CheckoutService.java": "c9576c356b54658dcffe3c05a8e7e718b61e7b4980a53c186a7db4c2412e0c12",
+            "src/shop/ReceiptRenderer.java": "659af617f89818212f7136d4984001fe9b36a968502c82aa279374849df95ccd",
+            "src/shop/BuildInfo.java": "822d4e253f85fcd7e3b00aa9d8cc61b67615dd3de34e558ea616aea08c367952"
+          },
+          "executionOrdinal": 1,
+          "pairOrder": [
+            "baseline",
+            "compact"
+          ]
+        },
+        {
+          "task": "checkout-precision",
+          "variant": "compact",
+          "repeat": 1,
+          "passed": true,
+          "status": "COMPLETED",
+          "exitCode": 0,
+          "quality": {
+            "passed": true,
+            "phase": "assertions",
+            "exitCode": 0,
+            "declaredSourcesExact": true,
+            "unchangedCount": 1,
+            "unchangedSources": {
+              "src/shop/BuildInfo.java": {
+                "unchanged": true,
+                "sha256": "822d4e253f85fcd7e3b00aa9d8cc61b67615dd3de34e558ea616aea08c367952"
+              }
+            }
+          },
+          "requiredFilesChanged": true,
+          "exactChangedPaths": true,
+          "unrelatedSourcesUnchanged": true,
+          "workspaceAllowlist": true,
+          "changedPaths": [
+            "src/shop/CartLine.java",
+            "src/shop/DiscountPolicy.java",
+            "src/shop/PriceCalculator.java",
+            "src/shop/ReceiptRenderer.java"
+          ],
+          "iterations": 8,
+          "agentError": "",
+          "processElapsedMs": 66398.85370000047,
+          "agentElapsedMs": 65329,
+          "contextEstimateBudget": 12000,
+          "providerUsage": {
+            "inputTokens": 57286,
+            "outputTokens": 1126,
+            "cachedInputTokens": 45184
+          },
+          "usageAvailability": "adapter-reported; zero may mean missing; billing not verified",
+          "offlineRequests": null,
+          "offlineFailures": [],
+          "sourceSha256": {
+            "src/shop/CartLine.java": "f116e82553b84c4d2e61a086e65ef6c75ae09f9f169fe8b1185620faf860fb80",
+            "src/shop/Catalog.java": "f70c4f95f02756fa7c16a501f031ad6001d216220cf81cb1d05d2330ba74c9f1",
+            "src/shop/DiscountPolicy.java": "f969ea82e3720a6582bf2641ee71fbea266dc3229a6fbe29ed27f0ad98215577",
+            "src/shop/PricedLine.java": "2e431a9c3c88bb00949f9e463796b5c397a141762f1a81bb4be0e3a704ec6361",
+            "src/shop/PriceCalculator.java": "3008ed7d0e45381ff83f7176cb3fd04b0676fa20fa975211ec07542d13bc4e7f",
+            "src/shop/Receipt.java": "6df1b2f0ac31c4dcf4afb6cbd193280d9a374c46f71eac0a7b92890a280cf240",
+            "src/shop/CheckoutService.java": "c9576c356b54658dcffe3c05a8e7e718b61e7b4980a53c186a7db4c2412e0c12",
+            "src/shop/ReceiptRenderer.java": "416f191036f89e2a5d88063f8825320724cdb1dc58d72106e0300b635e851c6c",
+            "src/shop/BuildInfo.java": "822d4e253f85fcd7e3b00aa9d8cc61b67615dd3de34e558ea616aea08c367952"
+          },
+          "executionOrdinal": 2,
+          "pairOrder": [
+            "baseline",
+            "compact"
+          ]
+        },
+        {
+          "task": "ingestion-integrity",
+          "variant": "baseline",
+          "repeat": 1,
+          "passed": true,
+          "status": "COMPLETED",
+          "exitCode": 0,
+          "quality": {
+            "passed": true,
+            "phase": "assertions",
+            "exitCode": 0,
+            "declaredSourcesExact": true,
+            "unchangedCount": 2,
+            "unchangedSources": {
+              "src/ingest/InputRow.java": {
+                "unchanged": true,
+                "sha256": "deaf066822b5b8777180214ee5c2164c20689eb1b5d9eb7746bc73fe20d9d6a7"
+              },
+              "src/ingest/BuildInfo.java": {
+                "unchanged": true,
+                "sha256": "1db6450dc827db54e9598024aa726d1bbc4da01d0d16a2420d54a5089247bc9d"
+              }
+            }
+          },
+          "requiredFilesChanged": true,
+          "exactChangedPaths": true,
+          "unrelatedSourcesUnchanged": true,
+          "workspaceAllowlist": true,
+          "changedPaths": [
+            "src/ingest/Tokenizer.java",
+            "src/ingest/RecordParser.java",
+            "src/ingest/BatchAccumulator.java",
+            "src/ingest/ReportRenderer.java"
+          ],
+          "iterations": 9,
+          "agentError": "",
+          "processElapsedMs": 61969.54410000035,
+          "agentElapsedMs": 60892,
+          "contextEstimateBudget": 48000,
+          "providerUsage": {
+            "inputTokens": 65821,
+            "outputTokens": 1204,
+            "cachedInputTokens": 50816
+          },
+          "usageAvailability": "adapter-reported; zero may mean missing; billing not verified",
+          "offlineRequests": null,
+          "offlineFailures": [],
+          "sourceSha256": {
+            "src/ingest/InputRow.java": "deaf066822b5b8777180214ee5c2164c20689eb1b5d9eb7746bc73fe20d9d6a7",
+            "src/ingest/ParsedRecord.java": "a05bf4c978954780e57ab72a4fb298e17a9eb2aefaa8fcde407bbb7b8c302153",
+            "src/ingest/ValidationIssue.java": "826c953c5ea889bedd3d5066aaaba2cf80e7e123472155e614ac9d2af4e2a07a",
+            "src/ingest/Tokenizer.java": "9212f9d3939f1292291df8f3fa2057ca8c816ced99695fc1437607d6cb2a89e0",
+            "src/ingest/RecordParser.java": "7a12b0f86d2ee4bd96e48f6e1f057cc1d8713f109aec116f0ebc1fb214699f42",
+            "src/ingest/BatchAccumulator.java": "096c285425a57a0ec1ad1e257a36a4036b1c13d3305338590aaa778b8ca15fa8",
+            "src/ingest/ImportReport.java": "ba1c75b6f5e620549533df52afe98a516200fe8d585f70c5e46b73848944a3df",
+            "src/ingest/IngestionService.java": "211b24df2389f1fbd59a7d07e7b899b4165cba4fef6d9c80e509fcebb8116e0f",
+            "src/ingest/ReportRenderer.java": "7766c0b474f69c8a48409600f6cb611b63c33c22571d2f6fae7b28eb4149f3d0",
+            "src/ingest/BuildInfo.java": "1db6450dc827db54e9598024aa726d1bbc4da01d0d16a2420d54a5089247bc9d"
+          },
+          "executionOrdinal": 3,
+          "pairOrder": [
+            "baseline",
+            "compact"
+          ]
+        },
+        {
+          "task": "ingestion-integrity",
+          "variant": "compact",
+          "repeat": 1,
+          "passed": true,
+          "status": "COMPLETED",
+          "exitCode": 0,
+          "quality": {
+            "passed": true,
+            "phase": "assertions",
+            "exitCode": 0,
+            "declaredSourcesExact": true,
+            "unchangedCount": 2,
+            "unchangedSources": {
+              "src/ingest/InputRow.java": {
+                "unchanged": true,
+                "sha256": "deaf066822b5b8777180214ee5c2164c20689eb1b5d9eb7746bc73fe20d9d6a7"
+              },
+              "src/ingest/BuildInfo.java": {
+                "unchanged": true,
+                "sha256": "1db6450dc827db54e9598024aa726d1bbc4da01d0d16a2420d54a5089247bc9d"
+              }
+            }
+          },
+          "requiredFilesChanged": true,
+          "exactChangedPaths": true,
+          "unrelatedSourcesUnchanged": true,
+          "workspaceAllowlist": true,
+          "changedPaths": [
+            "src/ingest/Tokenizer.java",
+            "src/ingest/RecordParser.java",
+            "src/ingest/BatchAccumulator.java",
+            "src/ingest/ReportRenderer.java"
+          ],
+          "iterations": 9,
+          "agentError": "",
+          "processElapsedMs": 58997.18999999823,
+          "agentElapsedMs": 57918,
+          "contextEstimateBudget": 12000,
+          "providerUsage": {
+            "inputTokens": 65849,
+            "outputTokens": 1128,
+            "cachedInputTokens": 50176
+          },
+          "usageAvailability": "adapter-reported; zero may mean missing; billing not verified",
+          "offlineRequests": null,
+          "offlineFailures": [],
+          "sourceSha256": {
+            "src/ingest/InputRow.java": "deaf066822b5b8777180214ee5c2164c20689eb1b5d9eb7746bc73fe20d9d6a7",
+            "src/ingest/ParsedRecord.java": "a05bf4c978954780e57ab72a4fb298e17a9eb2aefaa8fcde407bbb7b8c302153",
+            "src/ingest/ValidationIssue.java": "826c953c5ea889bedd3d5066aaaba2cf80e7e123472155e614ac9d2af4e2a07a",
+            "src/ingest/Tokenizer.java": "9212f9d3939f1292291df8f3fa2057ca8c816ced99695fc1437607d6cb2a89e0",
+            "src/ingest/RecordParser.java": "7a12b0f86d2ee4bd96e48f6e1f057cc1d8713f109aec116f0ebc1fb214699f42",
+            "src/ingest/BatchAccumulator.java": "096c285425a57a0ec1ad1e257a36a4036b1c13d3305338590aaa778b8ca15fa8",
+            "src/ingest/ImportReport.java": "ba1c75b6f5e620549533df52afe98a516200fe8d585f70c5e46b73848944a3df",
+            "src/ingest/IngestionService.java": "211b24df2389f1fbd59a7d07e7b899b4165cba4fef6d9c80e509fcebb8116e0f",
+            "src/ingest/ReportRenderer.java": "7766c0b474f69c8a48409600f6cb611b63c33c22571d2f6fae7b28eb4149f3d0",
+            "src/ingest/BuildInfo.java": "1db6450dc827db54e9598024aa726d1bbc4da01d0d16a2420d54a5089247bc9d"
+          },
+          "executionOrdinal": 4,
+          "pairOrder": [
+            "baseline",
+            "compact"
+          ]
+        }
+      ],
+      "summary": {
+        "baseline": {
+          "runs": 2,
+          "passed": 2,
+          "medianProcessElapsedMs": 63753.178099999786
+        },
+        "compact": {
+          "runs": 2,
+          "passed": 2,
+          "medianProcessElapsedMs": 62698.02184999935
+        }
+      }
+    },
+    "offlineRepository": {
+      "evaluationVersion": 1,
+      "mode": "localhost-known-repair",
+      "createdAt": "2026-10-14T09:34:46.593955+00:00",
+      "scope": "Related-file Java repairs on generated miniature repositories; actual live model patches are independently compiled/asserted. Offline policy supplies known patches. No broad repository/billing/speed claim.",
+      "artifactSha256": "43d272eec8e2087f3e72bb5147cfdec5e2fba00be7614d7fef4dfe0b23d1e3a6",
+      "evaluatorSha256": "85e32e955b75d62aad02f633c36f931f68b29aa75f14aab29c41b0c6b016321c",
+      "fixtureSha256": "3a7cc1f7ddf1877e0ac9ee39ceebbbad5ad877d189eed9cb9b34bc52c9bca591",
+      "checkerSha256": "90a045b74695362aaa07bbdc6cee9995a134017023c2d3a6d1ed0247902491f2",
+      "provider": "openai-compatible",
+      "model": "repository-local-fixture",
+      "baseUrl": "loopback fixture",
+      "outputLimit": 1800,
+      "maxIterations": 4,
+      "taskMetadata": [
+        {
+          "id": "checkout-precision",
+          "sourceFiles": 9,
+          "sourceLines": 177,
+          "requiredChangedPaths": [
+            "src/shop/CartLine.java",
+            "src/shop/PriceCalculator.java",
+            "src/shop/DiscountPolicy.java",
+            "src/shop/ReceiptRenderer.java"
+          ],
+          "unchangedPaths": [
+            "src/shop/BuildInfo.java"
+          ],
+          "prompt": "Repair the shop checkout repository without changing public API names or receipt format.\nCart quantities must be 1..1000 inclusive. Price each line using exact long-cent arithmetic,\nreject arithmetic overflow, and preserve cart order/input data. Discount eligibility includes the\nthreshold itself; calculate floor(subtotal * percent / 100) exactly without overflowing even at\nLong.MAX_VALUE, for percentages 0..100. Render all nonnegative money with exactly two decimal\ndigits, independent of locale, including one-cent totals and Long.MAX_VALUE. Preserve immutable\nreceipts, unknown-SKU rejection, empty-cart totals and existing validation. Verify regression\ncases across pricing, discounts and rendering. Keep BuildInfo.java byte-identical and preserve\nunrelated source behavior. Keep the declared source-file set; do not add or delete source files.\nDo not add external dependencies or use network/process/environment IO."
+        },
+        {
+          "id": "ingestion-integrity",
+          "sourceFiles": 10,
+          "sourceLines": 174,
+          "requiredChangedPaths": [
+            "src/ingest/Tokenizer.java",
+            "src/ingest/RecordParser.java",
+            "src/ingest/BatchAccumulator.java",
+            "src/ingest/ReportRenderer.java"
+          ],
+          "unchangedPaths": [
+            "src/ingest/InputRow.java",
+            "src/ingest/BuildInfo.java"
+          ],
+          "prompt": "Repair the ingest repository while retaining public API names. Treat every nonempty\ndelimiter literally, including regex characters and multi-character delimiters, and preserve\ntrailing empty fields. Records require exactly three fields: ID matching [A-Z][A-Z0-9]{2,11},\na nonblank label preserved without trimming, and unsigned plain decimal currency with at most\ntwo fraction digits. Convert to long cents exactly, reject unrepresentable cents, and support\nzero and Long.MAX_VALUE cents. Accept the first valid record for each ID; reject every duplicate\nwithout replacing it or changing totals. Overflowing additions also leave accumulated state\nunchanged. Preserve input order and report rejection line numbers in order while continuing\nafter invalid rows. Output uses pipe-separated records; escape backslashes by doubling them\nand pipes by prefixing a backslash. Preserve immutable reports and empty-import behavior.\nKeep InputRow.java and BuildInfo.java byte-identical. Verify fractional, duplicate, overflow, literal delimiter and\nescaping regressions. Keep the declared source-file set; do not add or delete source files.\nDo not add dependencies or use network/process/environment IO."
+        }
+      ],
+      "passed": true,
+      "runs": [
+        {
+          "task": "checkout-precision",
+          "variant": "baseline",
+          "repeat": 1,
+          "passed": true,
+          "status": "COMPLETED",
+          "exitCode": 0,
+          "quality": {
+            "passed": true,
+            "phase": "assertions",
+            "exitCode": 0,
+            "declaredSourcesExact": true,
+            "unchangedCount": 1,
+            "unchangedSources": {
+              "src/shop/BuildInfo.java": {
+                "unchanged": true,
+                "sha256": "822d4e253f85fcd7e3b00aa9d8cc61b67615dd3de34e558ea616aea08c367952"
+              }
+            }
+          },
+          "requiredFilesChanged": true,
+          "exactChangedPaths": true,
+          "unrelatedSourcesUnchanged": true,
+          "workspaceAllowlist": true,
+          "changedPaths": [
+            "src/shop/CartLine.java",
+            "src/shop/DiscountPolicy.java",
+            "src/shop/PriceCalculator.java",
+            "src/shop/ReceiptRenderer.java"
+          ],
+          "iterations": 2,
+          "agentError": "",
+          "processElapsedMs": 1280.0681000007899,
+          "agentElapsedMs": 156,
+          "contextEstimateBudget": 48000,
+          "providerUsage": null,
+          "usageAvailability": "absent: localhost fixture",
+          "offlineRequests": 2,
+          "offlineFailures": [],
+          "sourceSha256": {
+            "src/shop/CartLine.java": "f116e82553b84c4d2e61a086e65ef6c75ae09f9f169fe8b1185620faf860fb80",
+            "src/shop/Catalog.java": "f70c4f95f02756fa7c16a501f031ad6001d216220cf81cb1d05d2330ba74c9f1",
+            "src/shop/DiscountPolicy.java": "ff65d1c38f21ad39e1127bd534b0701119798b64e04ffde47e29ca2ac1403e70",
+            "src/shop/PricedLine.java": "2e431a9c3c88bb00949f9e463796b5c397a141762f1a81bb4be0e3a704ec6361",
+            "src/shop/PriceCalculator.java": "3008ed7d0e45381ff83f7176cb3fd04b0676fa20fa975211ec07542d13bc4e7f",
+            "src/shop/Receipt.java": "6df1b2f0ac31c4dcf4afb6cbd193280d9a374c46f71eac0a7b92890a280cf240",
+            "src/shop/CheckoutService.java": "c9576c356b54658dcffe3c05a8e7e718b61e7b4980a53c186a7db4c2412e0c12",
+            "src/shop/ReceiptRenderer.java": "cd5bd1d8a5687548ff5c762850f729267124cab262c0761d16408d5277161eeb",
+            "src/shop/BuildInfo.java": "822d4e253f85fcd7e3b00aa9d8cc61b67615dd3de34e558ea616aea08c367952"
+          },
+          "executionOrdinal": 1,
+          "pairOrder": [
+            "baseline",
+            "compact"
+          ]
+        },
+        {
+          "task": "checkout-precision",
+          "variant": "compact",
+          "repeat": 1,
+          "passed": true,
+          "status": "COMPLETED",
+          "exitCode": 0,
+          "quality": {
+            "passed": true,
+            "phase": "assertions",
+            "exitCode": 0,
+            "declaredSourcesExact": true,
+            "unchangedCount": 1,
+            "unchangedSources": {
+              "src/shop/BuildInfo.java": {
+                "unchanged": true,
+                "sha256": "822d4e253f85fcd7e3b00aa9d8cc61b67615dd3de34e558ea616aea08c367952"
+              }
+            }
+          },
+          "requiredFilesChanged": true,
+          "exactChangedPaths": true,
+          "unrelatedSourcesUnchanged": true,
+          "workspaceAllowlist": true,
+          "changedPaths": [
+            "src/shop/CartLine.java",
+            "src/shop/DiscountPolicy.java",
+            "src/shop/PriceCalculator.java",
+            "src/shop/ReceiptRenderer.java"
+          ],
+          "iterations": 2,
+          "agentError": "",
+          "processElapsedMs": 1398.8336000002164,
+          "agentElapsedMs": 214,
+          "contextEstimateBudget": 12000,
+          "providerUsage": null,
+          "usageAvailability": "absent: localhost fixture",
+          "offlineRequests": 2,
+          "offlineFailures": [],
+          "sourceSha256": {
+            "src/shop/CartLine.java": "f116e82553b84c4d2e61a086e65ef6c75ae09f9f169fe8b1185620faf860fb80",
+            "src/shop/Catalog.java": "f70c4f95f02756fa7c16a501f031ad6001d216220cf81cb1d05d2330ba74c9f1",
+            "src/shop/DiscountPolicy.java": "ff65d1c38f21ad39e1127bd534b0701119798b64e04ffde47e29ca2ac1403e70",
+            "src/shop/PricedLine.java": "2e431a9c3c88bb00949f9e463796b5c397a141762f1a81bb4be0e3a704ec6361",
+            "src/shop/PriceCalculator.java": "3008ed7d0e45381ff83f7176cb3fd04b0676fa20fa975211ec07542d13bc4e7f",
+            "src/shop/Receipt.java": "6df1b2f0ac31c4dcf4afb6cbd193280d9a374c46f71eac0a7b92890a280cf240",
+            "src/shop/CheckoutService.java": "c9576c356b54658dcffe3c05a8e7e718b61e7b4980a53c186a7db4c2412e0c12",
+            "src/shop/ReceiptRenderer.java": "cd5bd1d8a5687548ff5c762850f729267124cab262c0761d16408d5277161eeb",
+            "src/shop/BuildInfo.java": "822d4e253f85fcd7e3b00aa9d8cc61b67615dd3de34e558ea616aea08c367952"
+          },
+          "executionOrdinal": 2,
+          "pairOrder": [
+            "baseline",
+            "compact"
+          ]
+        },
+        {
+          "task": "ingestion-integrity",
+          "variant": "baseline",
+          "repeat": 1,
+          "passed": true,
+          "status": "COMPLETED",
+          "exitCode": 0,
+          "quality": {
+            "passed": true,
+            "phase": "assertions",
+            "exitCode": 0,
+            "declaredSourcesExact": true,
+            "unchangedCount": 2,
+            "unchangedSources": {
+              "src/ingest/InputRow.java": {
+                "unchanged": true,
+                "sha256": "deaf066822b5b8777180214ee5c2164c20689eb1b5d9eb7746bc73fe20d9d6a7"
+              },
+              "src/ingest/BuildInfo.java": {
+                "unchanged": true,
+                "sha256": "1db6450dc827db54e9598024aa726d1bbc4da01d0d16a2420d54a5089247bc9d"
+              }
+            }
+          },
+          "requiredFilesChanged": true,
+          "exactChangedPaths": true,
+          "unrelatedSourcesUnchanged": true,
+          "workspaceAllowlist": true,
+          "changedPaths": [
+            "src/ingest/Tokenizer.java",
+            "src/ingest/RecordParser.java",
+            "src/ingest/BatchAccumulator.java",
+            "src/ingest/ReportRenderer.java"
+          ],
+          "iterations": 2,
+          "agentError": "",
+          "processElapsedMs": 1240.2671999989252,
+          "agentElapsedMs": 160,
+          "contextEstimateBudget": 48000,
+          "providerUsage": null,
+          "usageAvailability": "absent: localhost fixture",
+          "offlineRequests": 2,
+          "offlineFailures": [],
+          "sourceSha256": {
+            "src/ingest/InputRow.java": "deaf066822b5b8777180214ee5c2164c20689eb1b5d9eb7746bc73fe20d9d6a7",
+            "src/ingest/ParsedRecord.java": "a05bf4c978954780e57ab72a4fb298e17a9eb2aefaa8fcde407bbb7b8c302153",
+            "src/ingest/ValidationIssue.java": "826c953c5ea889bedd3d5066aaaba2cf80e7e123472155e614ac9d2af4e2a07a",
+            "src/ingest/Tokenizer.java": "ad6ae6033a04401f8c4aec03c5b5773f4509313daf3969735525a8a71f14f630",
+            "src/ingest/RecordParser.java": "7a12b0f86d2ee4bd96e48f6e1f057cc1d8713f109aec116f0ebc1fb214699f42",
+            "src/ingest/BatchAccumulator.java": "096c285425a57a0ec1ad1e257a36a4036b1c13d3305338590aaa778b8ca15fa8",
+            "src/ingest/ImportReport.java": "ba1c75b6f5e620549533df52afe98a516200fe8d585f70c5e46b73848944a3df",
+            "src/ingest/IngestionService.java": "211b24df2389f1fbd59a7d07e7b899b4165cba4fef6d9c80e509fcebb8116e0f",
+            "src/ingest/ReportRenderer.java": "7766c0b474f69c8a48409600f6cb611b63c33c22571d2f6fae7b28eb4149f3d0",
+            "src/ingest/BuildInfo.java": "1db6450dc827db54e9598024aa726d1bbc4da01d0d16a2420d54a5089247bc9d"
+          },
+          "executionOrdinal": 3,
+          "pairOrder": [
+            "baseline",
+            "compact"
+          ]
+        },
+        {
+          "task": "ingestion-integrity",
+          "variant": "compact",
+          "repeat": 1,
+          "passed": true,
+          "status": "COMPLETED",
+          "exitCode": 0,
+          "quality": {
+            "passed": true,
+            "phase": "assertions",
+            "exitCode": 0,
+            "declaredSourcesExact": true,
+            "unchangedCount": 2,
+            "unchangedSources": {
+              "src/ingest/InputRow.java": {
+                "unchanged": true,
+                "sha256": "deaf066822b5b8777180214ee5c2164c20689eb1b5d9eb7746bc73fe20d9d6a7"
+              },
+              "src/ingest/BuildInfo.java": {
+                "unchanged": true,
+                "sha256": "1db6450dc827db54e9598024aa726d1bbc4da01d0d16a2420d54a5089247bc9d"
+              }
+            }
+          },
+          "requiredFilesChanged": true,
+          "exactChangedPaths": true,
+          "unrelatedSourcesUnchanged": true,
+          "workspaceAllowlist": true,
+          "changedPaths": [
+            "src/ingest/Tokenizer.java",
+            "src/ingest/RecordParser.java",
+            "src/ingest/BatchAccumulator.java",
+            "src/ingest/ReportRenderer.java"
+          ],
+          "iterations": 2,
+          "agentError": "",
+          "processElapsedMs": 1211.2492000014754,
+          "agentElapsedMs": 154,
+          "contextEstimateBudget": 12000,
+          "providerUsage": null,
+          "usageAvailability": "absent: localhost fixture",
+          "offlineRequests": 2,
+          "offlineFailures": [],
+          "sourceSha256": {
+            "src/ingest/InputRow.java": "deaf066822b5b8777180214ee5c2164c20689eb1b5d9eb7746bc73fe20d9d6a7",
+            "src/ingest/ParsedRecord.java": "a05bf4c978954780e57ab72a4fb298e17a9eb2aefaa8fcde407bbb7b8c302153",
+            "src/ingest/ValidationIssue.java": "826c953c5ea889bedd3d5066aaaba2cf80e7e123472155e614ac9d2af4e2a07a",
+            "src/ingest/Tokenizer.java": "ad6ae6033a04401f8c4aec03c5b5773f4509313daf3969735525a8a71f14f630",
+            "src/ingest/RecordParser.java": "7a12b0f86d2ee4bd96e48f6e1f057cc1d8713f109aec116f0ebc1fb214699f42",
+            "src/ingest/BatchAccumulator.java": "096c285425a57a0ec1ad1e257a36a4036b1c13d3305338590aaa778b8ca15fa8",
+            "src/ingest/ImportReport.java": "ba1c75b6f5e620549533df52afe98a516200fe8d585f70c5e46b73848944a3df",
+            "src/ingest/IngestionService.java": "211b24df2389f1fbd59a7d07e7b899b4165cba4fef6d9c80e509fcebb8116e0f",
+            "src/ingest/ReportRenderer.java": "7766c0b474f69c8a48409600f6cb611b63c33c22571d2f6fae7b28eb4149f3d0",
+            "src/ingest/BuildInfo.java": "1db6450dc827db54e9598024aa726d1bbc4da01d0d16a2420d54a5089247bc9d"
+          },
+          "executionOrdinal": 4,
+          "pairOrder": [
+            "baseline",
+            "compact"
+          ]
+        }
+      ],
+      "summary": {
+        "baseline": {
+          "runs": 2,
+          "passed": 2,
+          "medianProcessElapsedMs": 1260.1676499998575
+        },
+        "compact": {
+          "runs": 2,
+          "passed": 2,
+          "medianProcessElapsedMs": 1305.041400000846
+        }
+      }
+    },
+    "offlineLatencyControls": {
+      "status": "PASS",
+      "scope": "real packaged CLI, localhost synthetic responses only",
+      "controls": [
+        {
+          "fixture": "early",
+          "passed": true,
+          "status": "COMPLETED",
+          "firstVisibleTextMs": 657.2299,
+          "processCompletionMs": 1173.0754,
+          "errorCategory": null,
+          "requests": 1,
+          "workspaceAllowlist": true
+        },
+        {
+          "fixture": "sync",
+          "passed": true,
+          "status": "COMPLETED",
+          "firstVisibleTextMs": 627.4943,
+          "processCompletionMs": 1131.8766,
+          "errorCategory": null,
+          "requests": 1,
+          "workspaceAllowlist": true
+        },
+        {
+          "fixture": "unfinished",
+          "passed": false,
+          "status": "FAILED",
+          "firstVisibleTextMs": 759.8162,
+          "processCompletionMs": 1258.6009,
+          "errorCategory": "agent_failed",
+          "requests": 1,
+          "workspaceAllowlist": true
+        },
+        {
+          "fixture": "malformed",
+          "passed": false,
+          "status": "FAILED",
+          "firstVisibleTextMs": null,
+          "processCompletionMs": 1167.788,
+          "errorCategory": "agent_failed",
+          "requests": 1,
+          "workspaceAllowlist": true
+        },
+        {
+          "fixture": "tool",
+          "passed": false,
+          "status": "MAX_ITERATIONS",
+          "firstVisibleTextMs": null,
+          "processCompletionMs": 1168.5564,
+          "errorCategory": "tool_response_rejected",
+          "requests": 1,
+          "workspaceAllowlist": true
+        }
+      ],
+      "escapedArtificialRedaction": true,
+      "syntheticCleanupFailureRetained": true,
+      "syntheticInspectionFailureRetained": true
+    }
+  },
+  "reviews": {
+    "docs/LATENCY_AUDIT.md": {
+      "sha256": "40ba4c40d4d84e20da064f10875345f67ad5cff691e486f7e4231c4ff3912a73",
+      "text": "# Independent first-visible-text audit\n\nRead-only review of `scripts/measure_latency.py`, `scripts/check_latency_measurement.py` and `StreamingOutput`. No credentials/controller access, external requests, source edits or Maven. No redundant localhost run was performed: the reviewed changes do not reveal a concern requiring another model/transport test. Lead is rerunning the existing packaged localhost controls.\n\n## Acceptance assessment\n\nThe measurement timestamps the first non-whitespace stdout byte inside the reader thread immediately after `read(1)`, using the same monotonic clock as process launch/completion. It does not derive first text from final CLI JSON or process completion. `StreamingOutput.delta` flushes actual provider fragments. The held-finish localhost control waits for that byte and asserts the measuring future is still incomplete before allowing finish; this is an appropriate independent early-output contract.\n\nAccepted samples require an exit code zero, first-visible timestamp ordered before the observed completion timestamp, exact stdout phrase (allowing surrounding whitespace/newline), one persisted exact assistant answer, no tool calls/results, COMPLETED checkpoint, matching provider/model/workspace, unchanged config and no unexpected non-state files. Unfinished SSE, malformed JSON and a tool response are negative controls. The one-iteration cap prevents the requested mutation from executing even when a complete tool response arrives; `zeroTools` still rejects that sample. Failed rows are appended alongside successes and all must pass for the report to pass. Requested stream mode is explicitly qualified: a generic gateway may return JSON despite `stream:true`, and these measurements alone cannot certify SSE.\n\nUsage handling is soundly limited to the CLI's combined normalized token total. Input/output/cached components remain null; absent usage may look like zero, and the availability string says so. There is no invented component breakdown or billing claim. Recursive redaction replaces the selected credential in dictionary keys and values before JSON encoding; the escaped artificial secret control exercises this property. No raw stdout, stderr, model response or headers are included in the report.\n\n## Limits and small hardening opportunities\n\n- **Completion time is observed process wait-return time, not provider generation end.** First-text time includes Java startup, config/session/tool preparation, network/model behavior, output flush and Python scheduling. Process completion includes final checkpoint/report/JVM shutdown. Label comparison as packaged CLI user-visible latency. A sync sample naturally emits its first answer shortly before process exit; that does not establish early model streaming. Repeat/order balance reduces fixed order bias but is not a stable production speed claim.\n- **Reader scheduling can reject an otherwise valid short answer.** Completion is captured before reader joins. If the process exits before Python schedules the stdout reader, its first-byte timestamp may exceed completion; `validTimingOrder` then correctly refuses to invent an earlier timestamp. Preserve that failed sample and interpret it as measurement ordering uncertainty, rather than attributing it to provider latency. The held-finish control avoids this ambiguity for early-output correctness.\n- **Rare launch/cleanup OS errors can abort the report rather than retain a failed row.** Popen launch errors are caught, but `child.kill()` during timeout/finally and some file/stat calls outside protected regions may raise OSError. In that case `main` stops before appending a result, unlike normal timeout/parser/acceptance failures. A modest repair is to catch cleanup OSError, mark a fixed `cleanup_failure` category, and continue preserving the sample; avoid logging exception text. This is a source-level error-path gap, not reproduced in ordinary localhost execution.\n- **Cleanup is bounded best effort.** On timeout the runner kills only the Java child and waits up to five seconds, then joins each reader for up to two seconds. Reader-timeout samples fail and live readers/pipes can remain until EOF; no whole-process-tree cleanup is promised. With tools prohibited and max-iterations one, the normal probe does not start command/MCP children. Document this bound rather than calling sample timeout an exact wall-clock cap or claiming guaranteed cleanup.\n\nProvider timeout now follows `min(60, sample timeout)`, and report includes createdAt/base URL/model. These fix attribution/config omissions. No additional blocker to the planned bounded live first-visible-CLI measurement was identified. Report existing control results separately from actual gateway samples; preserve every failure and do not combine malformed/unfinished samples into successful latency aggregates.\n"
+    },
+    "docs/REPOSITORY_CHECKER_HARDENING.md": {
+      "sha256": "ea6dfc6085a17b0e560446a3c251c6f81c4216ee0932664e8612af7b727a333f",
+      "text": "# Repository checker hardening acceptance\n\nThe checked implementation rejects additional Java sources anywhere in the workspace, including `.harness/Extra.java`. It checks declared source paths and all enumerated entries for symlinks or canonical redirection before reading source bytes. Source snapshots preserve UTF-8 newline bytes for unchanged-file validation. Compilation still uses fresh output directories, explicit empty classpath/sourcepath, disabled annotation processing and Java release 21.\n\nThe implementation was already present when this reviewer resumed the assignment; it was preserved and reviewed without further checker edits. Only this report was added by the reviewer.\n\n## Offline verification\n\nExecuted once with:\n\n```text\npython scripts\\check_repository_fixtures.py --java D:\\software\\jdk-21.0.10\\bin\\java.exe --javac D:\\software\\jdk-21.0.10\\bin\\javac.exe\n```\n\nExit code: **0**. Observed process wall time: **9.570 seconds**. No network, model calls or Maven were used.\n\n| Fixture | Original controls executed | New extra-Java control executed | Link controls skipped | Executed expectations matched |\n| --- | ---: | ---: | ---: | ---: |\n| checkout-precision | 7 | 1 | 2 | 8/8 |\n| ingestion-integrity | 8 | 1 | 2 | 9/9 |\n| Total | 15 | 2 | 4 | 17/17 |\n\nThe original 15 controls remain intact: both buggy repositories failed hidden assertions, both complete reference repairs passed, each of the eight omitted edited-file repairs failed, and all three forbidden unchanged-file mutations failed the source-invariant gate before compilation.\n\nBoth additional `.harness/Extra.java` variants failed in the snapshot phase with `declared_source_set_mismatch`; `gateMatched` was true for each.\n\nFor both fixtures, `source-symlink` and `parent-directory-redirection` could not create a symlink on this platform. All four explicitly report `passed: null`, `skipped: true`, phase `setup`, reason `symlink_creation_unsupported`, and error type `OSError`. The checker intentionally groups unsupported platform/permission errors, so this output does not establish a more specific OS error code. These four controls did not test the rejection gate and must not be counted as passes.\n\nThe aggregate `passed: true` means that all **executed** expectations matched. The separate `allControlVariantsExecuted: false` accurately records incomplete platform coverage.\n\n## Exact identities\n\nSHA-256 of the checker bytes reported by this execution:\n\n```text\n90a045b74695362aaa07bbdc6cee9995a134017023c2d3a6d1ed0247902491f2\n```\n\nSHA-256 of `json.dumps(TASKS, sort_keys=True).encode()` reported by this execution:\n\n```text\n3a7cc1f7ddf1877e0ac9ee39ceebbbad5ad877d189eed9cb9b34bc52c9bca591\n```\n\n## Limits\n\nSource and directory symlink rejection is reviewed in code but remains unexecuted on this host. A platform permitting symlink creation should run the same controls to obtain 21 executed variants. This is compiler/source verification isolation, not an OS sandbox: compiled fixture Java runs with the current account's permissions. Enumeration and snapshot reads also do not provide a transaction against concurrent hostile filesystem mutation.\n"
+    },
+    "docs/REPOSITORY_FINAL_REVIEW.md": {
+      "sha256": "bb513206efe6bb0d9b0359b9927c6a831b7cccdf3361de16b005e2ec0b1d5a20",
+      "text": "# Final repository integration review\n\nRead-only review of the current evaluator, runner boundary controls, shared checker, and the lead-produced `target/repository-offline-hardened.json`. Only this document was edited. No tests were rerun; no live reports, controller, credentials, network, or Maven were accessed.\n\n## Integration conclusion\n\nThe four gaps from the earlier runner audit are addressed in the current combined acceptance path:\n\n- `run_case()` requires `set(changed) == set(expected_changed_paths)`. All four required related paths must change, and changing any additional declared helper fails acceptance.\n- The runner separately compares initial/final raw bytes for **every** declared source outside those four paths. This protects five checkout helpers and six ingest helpers, including the specifically named protected files. The nested checker still reports only its explicitly named protected files; the top-level `unrelatedSourcesUnchanged` gate has the broader scope.\n- `verify()` now calls the shared hardened `verify_workspace()`. It rejects declared source symlinks/canonical redirection, validates enumerated workspace paths, and requires an exact whole-workspace Java source set. `.harness` Java additions fail the checker and runner allowlist. Normal `.harness` state files remain allowed. Independent compilation continues in a fresh directory with hidden checks and an empty compiler classpath/sourcepath.\n- Live preflight now uses parsed URL validation: HTTPS, nonempty hostname, no user/password/query/fragment, valid port, and no whitespace/control characters or backslash. It rejects absent hosts and malformed ports before launching the CLI. This is configuration syntax validation, without a network reachability or provider-compatibility claim.\n\n`scripts/check_repository_runner.py` contains ten explicit endpoint cases and four workspace cases, including retained state files and rejection of extra Java files in both `.harness/sessions` and `src`. This review inspected those controls without executing them or treating their source as execution evidence.\n\n## Existing hardened offline report\n\nTimestamp: `2026-10-14T09:34:46.593955+00:00`. Mode: `localhost-known-repair`. All four runs report `COMPLETED`, exit 0, independent assertions PASS, `declaredSourcesExact`, `exactChangedPaths`, `unrelatedSourcesUnchanged`, and `workspaceAllowlist` true. Every run uses two agent iterations and two localhost requests with no fixture failures.\n\n| Fixture | Variant / context estimate budget | Exact changed paths | Unchanged helpers | Process / agent elapsed ms |\n| --- | --- | --- | --- | --- |\n| checkout-precision | baseline / 48000 | 4 | 5 | 1280.0681 / 156 |\n| checkout-precision | compact / 12000 | 4 | 5 | 1398.8336 / 214 |\n| ingestion-integrity | baseline / 48000 | 4 | 6 | 1240.2672 / 160 |\n| ingestion-integrity | compact / 12000 | 4 | 6 | 1211.2492 / 154 |\n\nFinal source hashes match between baseline and compact for every declared source in each fixture. Checkout's changes are `CartLine.java`, `DiscountPolicy.java`, `PriceCalculator.java`, and `ReceiptRenderer.java`. Ingest's changes are `Tokenizer.java`, `RecordParser.java`, `BatchAccumulator.java`, and `ReportRenderer.java`.\n\nReport fingerprints:\n\n```text\nartifactSha256: 43d272eec8e2087f3e72bb5147cfdec5e2fba00be7614d7fef4dfe0b23d1e3a6\nevaluatorSha256: 85e32e955b75d62aad02f633c36f931f68b29aa75f14aab29c41b0c6b016321c\ncheckerSha256: 90a045b74695362aaa07bbdc6cee9995a134017023c2d3a6d1ed0247902491f2\nfixtureSha256: 3a7cc1f7ddf1877e0ac9ee39ceebbbad5ad877d189eed9cb9b34bc52c9bca591\n```\n\nRead-only SHA-256 checks of the current JAR, evaluator, and checker match the three corresponding report fingerprints. The fixture identity is recorded from the report; its normalized fixture digest was not separately recalculated in this review.\n\n## Remaining evidence limits\n\nNo material false-pass defect was found in the reviewed combined gates for ordinary fixture repairs. This conclusion does not turn source review into unexecuted negative-control evidence. The previous checker run explicitly skipped four source-link/parent-redirection cases because this Windows environment could not create symlinks. Execution evidence for those path rejections remains outstanding on a link-capable environment. The runner boundary script also has no additional-helper-modification negative control; exact set equality and the all-helper byte comparison enforce that condition in reviewed code.\n\nThe checker executes submitted Java under the current account; its private compilation directory is verification isolation rather than a hostile-code sandbox. Keep the existing scope statement intact.\n\nThe recorded offline policy supplies known reference repairs. The report correctly labels usage absent and makes no live-model, billing, or speed claim. Context budgets are estimates rather than measured token consumption. This single paired repeat, ordered baseline then compact, cannot support a latency comparison or prove savings from context compaction.\n"
+    },
+    "docs/LATENCY_HARDENING.md": {
+      "sha256": "a4291ffbae98865ea33291fb67f69445357b1c677ae5dd6d4e903357c1cf4291",
+      "text": "# Latency measurement failure retention\n\nThe independent latency audit found rare OS launch/inspection/cleanup errors could abort the report. The lead addressed this after the initial live measurements. `measure_sample` retains a sanitized failed row for unexpected measurement I/O errors, preserving already known timing fields. Timeout kill/poll/wait/pipe-close errors are caught, recorded as cleanup failures and reject acceptance. Exception details and captured output are not published.\n\nThe lead executed `python scripts/check_latency_measurement.py` once after the repair. All five real-jar localhost response expectations matched: early text observed before held finish, synchronous answer accepted, unfinished SSE rejected, malformed JSON rejected and attempted tool mutation rejected without dispatch. Recursive escaped artificial-secret redaction passed. Two additional synthetic OS-path controls passed: timeout kill errors retain a failed row with cleanup failure, and inspection I/O error retains known timing without private exception text. Evidence is in `target/latency-controls-hardened.json`.\n\nThis error-path hardening does not change the Java artifact or retroactively change the six initial live samples. Their report retains its original measurement-script hash. Cleanup remains bounded best effort: only the Java child is stopped, reader joins are bounded, and a whole-process-tree guarantee is not made. No additional live measurement or Maven run was used for this repair.\n"
+    }
+  }
+}

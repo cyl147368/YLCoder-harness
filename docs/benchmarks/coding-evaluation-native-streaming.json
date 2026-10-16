@@ -1,0 +1,337 @@
+{
+  "evaluationVersion": 1,
+  "mode": "localhost-scripted-trajectory",
+  "scope": "Three small Java repairs with independent compile/assertion checks. Offline policy is scripted; not AI coding quality or real latency evidence.",
+  "liveWorkload": null,
+  "checkerControls": [
+    {
+      "task": "inclusive-range",
+      "rejectsBuggyAndAcceptsRepair": true
+    },
+    {
+      "task": "empty-average",
+      "rejectsBuggyAndAcceptsRepair": true
+    },
+    {
+      "task": "null-blank",
+      "rejectsBuggyAndAcceptsRepair": true
+    }
+  ],
+  "firstTextLatencyMs": null,
+  "firstTextLatencyNote": "Not measured by JSON subprocess runner; use streaming smoke for early-delivery contract only.",
+  "passed": true,
+  "runs": [
+    {
+      "task": "inclusive-range",
+      "variant": "baseline",
+      "repeat": 1,
+      "contextEstimateBudget": 48000,
+      "status": "COMPLETED",
+      "exitCode": 0,
+      "quality": {
+        "passed": true,
+        "phase": "assertions",
+        "exitCode": 0
+      },
+      "passed": true,
+      "iterations": 15,
+      "processElapsedMs": 1429.1914999994333,
+      "agentElapsedMs": 337,
+      "providerUsage": null,
+      "usageAvailability": "absent: local fixture omits usage",
+      "serializedCl100kTokensSum": 219469,
+      "serializedO200kTokensSum": 219815,
+      "serializedUtf8BytesSum": 895708,
+      "requests": 15,
+      "currentSourceRetained": true,
+      "sourceSha256": "4e4358a2d52a7090827e53165266caacdbacbdbffcf547de7e5f3ff43508a163"
+    },
+    {
+      "task": "inclusive-range",
+      "variant": "compact",
+      "repeat": 1,
+      "contextEstimateBudget": 4000,
+      "status": "COMPLETED",
+      "exitCode": 0,
+      "quality": {
+        "passed": true,
+        "phase": "assertions",
+        "exitCode": 0
+      },
+      "passed": true,
+      "iterations": 15,
+      "processElapsedMs": 1363.5648000017682,
+      "agentElapsedMs": 302,
+      "providerUsage": null,
+      "usageAvailability": "absent: local fixture omits usage",
+      "serializedCl100kTokensSum": 40382,
+      "serializedO200kTokensSum": 40552,
+      "serializedUtf8BytesSum": 174250,
+      "requests": 15,
+      "currentSourceRetained": true,
+      "sourceSha256": "4e4358a2d52a7090827e53165266caacdbacbdbffcf547de7e5f3ff43508a163"
+    },
+    {
+      "task": "empty-average",
+      "variant": "baseline",
+      "repeat": 1,
+      "contextEstimateBudget": 48000,
+      "status": "COMPLETED",
+      "exitCode": 0,
+      "quality": {
+        "passed": true,
+        "phase": "assertions",
+        "exitCode": 0
+      },
+      "passed": true,
+      "iterations": 15,
+      "processElapsedMs": 1405.7604999998148,
+      "agentElapsedMs": 343,
+      "providerUsage": null,
+      "usageAvailability": "absent: local fixture omits usage",
+      "serializedCl100kTokensSum": 219637,
+      "serializedO200kTokensSum": 219982,
+      "serializedUtf8BytesSum": 896068,
+      "requests": 15,
+      "currentSourceRetained": true,
+      "sourceSha256": "88aa42cad46be86ecc1bcfcd8049938948dee5d7fe6a08571c5f3aa4f5326fd2"
+    },
+    {
+      "task": "empty-average",
+      "variant": "compact",
+      "repeat": 1,
+      "contextEstimateBudget": 4000,
+      "status": "COMPLETED",
+      "exitCode": 0,
+      "quality": {
+        "passed": true,
+        "phase": "assertions",
+        "exitCode": 0
+      },
+      "passed": true,
+      "iterations": 15,
+      "processElapsedMs": 1390.000699999291,
+      "agentElapsedMs": 307,
+      "providerUsage": null,
+      "usageAvailability": "absent: local fixture omits usage",
+      "serializedCl100kTokensSum": 40550,
+      "serializedO200kTokensSum": 40719,
+      "serializedUtf8BytesSum": 174610,
+      "requests": 15,
+      "currentSourceRetained": true,
+      "sourceSha256": "88aa42cad46be86ecc1bcfcd8049938948dee5d7fe6a08571c5f3aa4f5326fd2"
+    },
+    {
+      "task": "null-blank",
+      "variant": "baseline",
+      "repeat": 1,
+      "contextEstimateBudget": 48000,
+      "status": "COMPLETED",
+      "exitCode": 0,
+      "quality": {
+        "passed": true,
+        "phase": "assertions",
+        "exitCode": 0
+      },
+      "passed": true,
+      "iterations": 15,
+      "processElapsedMs": 1468.558700000358,
+      "agentElapsedMs": 355,
+      "providerUsage": null,
+      "usageAvailability": "absent: local fixture omits usage",
+      "serializedCl100kTokensSum": 219539,
+      "serializedO200kTokensSum": 219891,
+      "serializedUtf8BytesSum": 896005,
+      "requests": 15,
+      "currentSourceRetained": true,
+      "sourceSha256": "672555c3e1edc617d6304ba2e09b749562c74a24886fdb9389a926808efdf45b"
+    },
+    {
+      "task": "null-blank",
+      "variant": "compact",
+      "repeat": 1,
+      "contextEstimateBudget": 4000,
+      "status": "COMPLETED",
+      "exitCode": 0,
+      "quality": {
+        "passed": true,
+        "phase": "assertions",
+        "exitCode": 0
+      },
+      "passed": true,
+      "iterations": 15,
+      "processElapsedMs": 1407.026400000177,
+      "agentElapsedMs": 339,
+      "providerUsage": null,
+      "usageAvailability": "absent: local fixture omits usage",
+      "serializedCl100kTokensSum": 40452,
+      "serializedO200kTokensSum": 40628,
+      "serializedUtf8BytesSum": 174547,
+      "requests": 15,
+      "currentSourceRetained": true,
+      "sourceSha256": "672555c3e1edc617d6304ba2e09b749562c74a24886fdb9389a926808efdf45b"
+    },
+    {
+      "task": "inclusive-range",
+      "variant": "compact",
+      "repeat": 2,
+      "contextEstimateBudget": 4000,
+      "status": "COMPLETED",
+      "exitCode": 0,
+      "quality": {
+        "passed": true,
+        "phase": "assertions",
+        "exitCode": 0
+      },
+      "passed": true,
+      "iterations": 15,
+      "processElapsedMs": 1419.3252000004577,
+      "agentElapsedMs": 334,
+      "providerUsage": null,
+      "usageAvailability": "absent: local fixture omits usage",
+      "serializedCl100kTokensSum": 40382,
+      "serializedO200kTokensSum": 40552,
+      "serializedUtf8BytesSum": 174250,
+      "requests": 15,
+      "currentSourceRetained": true,
+      "sourceSha256": "4e4358a2d52a7090827e53165266caacdbacbdbffcf547de7e5f3ff43508a163"
+    },
+    {
+      "task": "inclusive-range",
+      "variant": "baseline",
+      "repeat": 2,
+      "contextEstimateBudget": 48000,
+      "status": "COMPLETED",
+      "exitCode": 0,
+      "quality": {
+        "passed": true,
+        "phase": "assertions",
+        "exitCode": 0
+      },
+      "passed": true,
+      "iterations": 15,
+      "processElapsedMs": 1431.3065000005736,
+      "agentElapsedMs": 327,
+      "providerUsage": null,
+      "usageAvailability": "absent: local fixture omits usage",
+      "serializedCl100kTokensSum": 219469,
+      "serializedO200kTokensSum": 219815,
+      "serializedUtf8BytesSum": 895708,
+      "requests": 15,
+      "currentSourceRetained": true,
+      "sourceSha256": "4e4358a2d52a7090827e53165266caacdbacbdbffcf547de7e5f3ff43508a163"
+    },
+    {
+      "task": "empty-average",
+      "variant": "compact",
+      "repeat": 2,
+      "contextEstimateBudget": 4000,
+      "status": "COMPLETED",
+      "exitCode": 0,
+      "quality": {
+        "passed": true,
+        "phase": "assertions",
+        "exitCode": 0
+      },
+      "passed": true,
+      "iterations": 15,
+      "processElapsedMs": 1420.2748999996402,
+      "agentElapsedMs": 310,
+      "providerUsage": null,
+      "usageAvailability": "absent: local fixture omits usage",
+      "serializedCl100kTokensSum": 40550,
+      "serializedO200kTokensSum": 40719,
+      "serializedUtf8BytesSum": 174610,
+      "requests": 15,
+      "currentSourceRetained": true,
+      "sourceSha256": "88aa42cad46be86ecc1bcfcd8049938948dee5d7fe6a08571c5f3aa4f5326fd2"
+    },
+    {
+      "task": "empty-average",
+      "variant": "baseline",
+      "repeat": 2,
+      "contextEstimateBudget": 48000,
+      "status": "COMPLETED",
+      "exitCode": 0,
+      "quality": {
+        "passed": true,
+        "phase": "assertions",
+        "exitCode": 0
+      },
+      "passed": true,
+      "iterations": 15,
+      "processElapsedMs": 1379.5556999994005,
+      "agentElapsedMs": 320,
+      "providerUsage": null,
+      "usageAvailability": "absent: local fixture omits usage",
+      "serializedCl100kTokensSum": 219637,
+      "serializedO200kTokensSum": 219982,
+      "serializedUtf8BytesSum": 896068,
+      "requests": 15,
+      "currentSourceRetained": true,
+      "sourceSha256": "88aa42cad46be86ecc1bcfcd8049938948dee5d7fe6a08571c5f3aa4f5326fd2"
+    },
+    {
+      "task": "null-blank",
+      "variant": "compact",
+      "repeat": 2,
+      "contextEstimateBudget": 4000,
+      "status": "COMPLETED",
+      "exitCode": 0,
+      "quality": {
+        "passed": true,
+        "phase": "assertions",
+        "exitCode": 0
+      },
+      "passed": true,
+      "iterations": 15,
+      "processElapsedMs": 1404.2931000003591,
+      "agentElapsedMs": 322,
+      "providerUsage": null,
+      "usageAvailability": "absent: local fixture omits usage",
+      "serializedCl100kTokensSum": 40452,
+      "serializedO200kTokensSum": 40628,
+      "serializedUtf8BytesSum": 174547,
+      "requests": 15,
+      "currentSourceRetained": true,
+      "sourceSha256": "672555c3e1edc617d6304ba2e09b749562c74a24886fdb9389a926808efdf45b"
+    },
+    {
+      "task": "null-blank",
+      "variant": "baseline",
+      "repeat": 2,
+      "contextEstimateBudget": 48000,
+      "status": "COMPLETED",
+      "exitCode": 0,
+      "quality": {
+        "passed": true,
+        "phase": "assertions",
+        "exitCode": 0
+      },
+      "passed": true,
+      "iterations": 15,
+      "processElapsedMs": 1501.773999998477,
+      "agentElapsedMs": 426,
+      "providerUsage": null,
+      "usageAvailability": "absent: local fixture omits usage",
+      "serializedCl100kTokensSum": 219539,
+      "serializedO200kTokensSum": 219891,
+      "serializedUtf8BytesSum": 896005,
+      "requests": 15,
+      "currentSourceRetained": true,
+      "sourceSha256": "672555c3e1edc617d6304ba2e09b749562c74a24886fdb9389a926808efdf45b"
+    }
+  ],
+  "summary": {
+    "baseline": {
+      "passed": 6,
+      "runs": 6,
+      "medianProcessElapsedMs": 1430.2490000000034
+    },
+    "compact": {
+      "passed": 6,
+      "runs": 6,
+      "medianProcessElapsedMs": 1405.659750000268
+    }
+  }
+}

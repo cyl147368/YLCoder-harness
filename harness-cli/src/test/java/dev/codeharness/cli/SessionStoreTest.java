@@ -217,7 +217,10 @@ class SessionStoreTest {
         assertThrows(IOException.class, () -> store.load("session"));
         assertThrows(IOException.class, () -> save(store, "escape"));
         Files.delete(link);
-        Files.createSymbolicLink(link.resolveSibling("session.lock"), outside);
+        Path lock = link.resolveSibling("session.lock");
+        // 保存失败前可能已经建立并释放普通锁文件；先移除测试生成的锁，再验证锁链接边界。
+        Files.deleteIfExists(lock);
+        Files.createSymbolicLink(lock, outside);
         assertThrows(IOException.class, () -> store.lock("session"));
         assertEquals("keep", Files.readString(outside));
     }

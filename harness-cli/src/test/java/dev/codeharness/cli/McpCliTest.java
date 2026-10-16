@@ -3,10 +3,12 @@ package dev.codeharness.cli;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import picocli.CommandLine;
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.net.InetSocketAddress;
@@ -23,7 +25,12 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class McpCliTest {
     private static final ObjectMapper JSON = new ObjectMapper();
-    @TempDir Path workspace;
+    @TempDir Path temporary;
+    private Path workspace;
+
+    @BeforeEach void createWorkspace() throws IOException {
+        workspace = Files.createDirectory(temporary.resolve("workspace"));
+    }
 
     @Test void runPermissionIsSeparateFromShellAndResumeClosesEveryServer() throws Exception {
         Path config = writeConfig();
@@ -121,10 +128,28 @@ class McpCliTest {
         return new Result(code, out.toString(), err.toString());
     }
 
-    private static void awaitStopped(long pid) throws Exception {
+    private void awaitStopped(long pid) throws Exception {
         long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
         while (ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false) && System.nanoTime() < until) Thread.sleep(10);
         assertFalse(ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false));
+        if (!System.getProperty("os.name").toLowerCase().contains("win")) return;
+
+        // Windows 强制终止返回后，原生进程清理仍可能短暂占用当前目录。
+        // 在同一个五秒时限内验证目录句柄已释放，避免 JUnit 清理先于系统清理。
+        Path released = temporary.resolve("released-workspace");
+        IOException lastFailure;
+        do {
+            try {
+                Files.move(workspace, released);
+            } catch (IOException busy) {
+                lastFailure = busy;
+                if (System.nanoTime() >= until) throw new IOException("MCP 已停止，但未释放工作目录", lastFailure);
+                Thread.sleep(10);
+                continue;
+            }
+            Files.move(released, workspace);
+            return;
+        } while (true);
     }
 
     private record Result(int code, String out, String err) { }

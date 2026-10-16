@@ -24,7 +24,7 @@ ylc run "修复解析器并验证结果"
 ylc resume SESSION_ID "同时处理空输入"
 ```
 
-不需要再进入安装目录，也不必每次传 `--config` 或 `--workspace`。进入后输入 `/status` 可核对实际工作区；只有命令行显式传入 `--workspace`（或 `-w`）才会改用其他目录。运行 `ylc doctor` 和 `ylc providers` 可检查本地设置，不会联系模型。完整步骤见根目录的 [中文使用手册](使用手册.md)。
+不需要再进入安装目录，也不必每次传 `--config` 或 `--workspace`。进入后输入 `/status` 可核对实际工作区；只有命令行显式传入 `--workspace`（或 `-w`）才会改用其他目录。运行 `ylc doctor` 和 `ylc providers` 可检查本地设置，不会联系模型。完整步骤见源码或便携包根目录的 `使用手册.md`。
 
 环境变量仍可选：将 `api-key` 留空，再设置 `api-key-env` 指定的变量。显式 `--api-key-env` 优先于配置密钥；其余情况由非空 `api-key` 优先。变量名的下划线不需要反斜杠转义。CodeGo 配置仅用于复现历史验证。用户配置包含明文密钥，请勿分享或提交。
 
@@ -55,4 +55,4 @@ export PATH="$HOME/.local/share/YLCoder-harness/bin:$PATH"
 
 包内不包含工作区、凭据或会话。自定义厂商 jar 可配合 `java -cp` 和 `dev.codeharness.cli.HarnessCli` 使用，见 README.md。
 
-`manifest.json` 记录包内文件的 SHA-256。外部 SHA256SUMS 记录各归档的校验和；两者都不是签名，也不能证明发布者身份。构建/验收证据和已知限制见 WORKPLAN.md。此发行包是本地快照；最初的快照验收未验证真实厂商或 Linux，后续 CodeGo 实测见 docs/CODEGO_EVALUATION.md，Linux 运行验收仍未完成。
+`manifest.json` 记录包内文件的 SHA-256。外部 SHA256SUMS 记录各归档的校验和；两者都不是签名，也不能证明发布者身份。构建/验收结果和已知限制见 docs/VERIFICATION.md。此发行包是本地快照；最初的快照验收未验证真实厂商或 Linux，后续 CodeGo 实测见 docs/CODEGO_EVALUATION.md，Linux 本机运行验收仍未完成。

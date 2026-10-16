@@ -87,7 +87,7 @@ def archives():
                 if entry.name == NAME + '/bin/ylc':
                     assert entry.mode & 0o111, 'TAR 启动器缺少可执行元数据'
     assert zip_files == tar_files, 'ZIP 与 TAR 解压后的文件不同'
-    required = {'bin/ylc', 'bin/ylc.cmd', 'lib/ylc.jar', 'config.example.yaml', 'configs/codego.example.yaml', 'README.md', '使用手册.md', 'WORKPLAN.md', 'INSTALL.md', 'manifest.json', 'install.ps1', 'scripts/install.py', 'scripts/smoke_auto_review.py'}
+    required = {'bin/ylc', 'bin/ylc.cmd', 'lib/ylc.jar', 'config.example.yaml', 'configs/codego.example.yaml', 'README.md', '使用手册.md', 'docs/VERIFICATION.md', 'INSTALL.md', 'manifest.json', 'install.ps1', 'scripts/install.py', 'scripts/smoke_auto_review.py'}
     required |= {'docs/LANGUAGE_TOKENS.md', 'docs/benchmarks/language-corpus-v1.json',
                  'docs/benchmarks/language-tokens-v1.json', 'scripts/compare_language_tokens.py'}
     relative = {name[len(NAME) + 1:]: data for name, data in zip_files.items()}
@@ -96,7 +96,7 @@ def archives():
     # 交付包范围刻意保持明确：可以增加文档，不可包含任意产物。
     required |= {'scripts/smoke_dashboard.py', 'scripts/smoke_bottom_status.py'}
     assert required <= relative.keys(), '交付包缺少终端验收脚本'
-    allowed = required | {'INSTALL.md', 'WORKPLAN.md', 'configs/codego.example.yaml'}
+    allowed = required | {'INSTALL.md', 'configs/codego.example.yaml'}
     assert all(name in allowed or name.startswith('docs/') for name in relative), '归档中有意外文件'
     manifest = json.loads(relative['manifest.json'])
     assert manifest['version'] == VERSION

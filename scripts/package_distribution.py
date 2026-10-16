@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DOCS = [
     'docs/CODEGO.md', 'docs/benchmarks/codego-acceptance-v1.json',
     'docs/CODEGO_EVALUATION.md', 'docs/benchmarks/codego-acceptance-v2.json',
-    'docs/DELIVERY_AUDIT.md',
+    'docs/DELIVERY_AUDIT.md', 'docs/VERIFICATION.md',
     'docs/LANGUAGE_TOKENS.md', 'docs/benchmarks/language-corpus-v1.json',
     'docs/benchmarks/language-tokens-v1.json', 'scripts/compare_language_tokens.py',
     'docs/ARCHITECTURE.md', 'docs/PROVIDER_REVIEW.md', 'docs/MCP.md', 'docs/CHANGE_REPORT.md',
@@ -46,7 +46,7 @@ def main():
             if entry not in archive.namelist():
                 raise ValueError('不是完整的 shaded CLI jar：' + entry)
     mapping = {'bin/ylc': 'packaging/bin/ylc', 'bin/ylc.cmd': 'packaging/bin/ylc.cmd',
-               'INSTALL.md': 'packaging/INSTALL.md', 'README.md': 'README.md', '使用手册.md': '使用手册.md', 'WORKPLAN.md': 'WORKPLAN.md',
+               'INSTALL.md': 'packaging/INSTALL.md', 'README.md': 'README.md', '使用手册.md': '使用手册.md',
                'config.example.yaml': 'config.example.yaml', 'install.ps1': 'install.ps1',
                'scripts/install.py': 'scripts/install.py', 'scripts/smoke_auto_review.py': 'scripts/smoke_auto_review.py',
                'scripts/smoke_dashboard.py': 'scripts/smoke_dashboard.py',

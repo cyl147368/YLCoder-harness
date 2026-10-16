@@ -27,4 +27,4 @@ Windows/POSIX 启动器根据自己的安装位置找到 jar，并保留调用�
 
 随包的 `python scripts/smoke_auto_review.py --launcher bin/ylc.cmd` 可验证实际启动器的无工具审核请求、通过后复用、人工结论、无效响应、服务失败、关闭开关、完整授权优先级及用量合计；全部请求使用临时 localhost 服务，不读取用户配置。POSIX 将启动器改为 `bin/ylc`。发行包验收结果另保存在 `target/distributions/auto-review.json`。
 
-归档是本地快照，不是已发布版本。理解随包证据前，请阅读 WORKPLAN.md 和厂商/基准限制。shaded jar 原有的第三方运行时声明仍保留；本次打包不引入新的项目许可证，也不宣称完成法律发行审查。
+归档是构建快照。理解随包证据前，请阅读 [验证记录](VERIFICATION.md) 和厂商/基准限制。shaded jar 原有的第三方运行时声明仍保留；本次打包不引入新的项目许可证，也不宣称完成法律发行审查。

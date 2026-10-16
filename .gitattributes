@@ -1,0 +1,13 @@
+* text=auto
+*.java text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.xml text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+/ylc text eol=lf
+/packaging/bin/ylc text eol=lf
+# 固定评测证据保留原始字节，避免检出时的换行转换影响 SHA-256。
+/docs/benchmarks/*.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
