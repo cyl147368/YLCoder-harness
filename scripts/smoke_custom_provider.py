@@ -41,6 +41,9 @@ public final class FixtureProvider implements ModelProvider {
                 }
                 return ChatResponse.text("自定义厂商恢复后保留精确元数据。");
             }
+            if (request.messages().stream().noneMatch(m -> m.content().equals("写入并读取自定义扩展文件。"))) {
+                throw new IllegalStateException("初始中文任务必须原样保留");
+            }
             boolean wrote = request.messages().stream().anyMatch(m -> "custom-write".equals(m.toolCallId()));
             boolean read = request.messages().stream().anyMatch(m -> "custom-read".equals(m.toolCallId()));
             if (wrote && read) {
@@ -60,6 +63,14 @@ public final class FixtureProvider implements ModelProvider {
 
 
 def run(command, cwd, **kwargs):
+    if os.name == 'nt' and 'dev.codeharness.cli.HarnessCli' in command:
+        # 外部 SPI 的 classpath 入口同样需要在 Java 层读取原始中文参数。
+        main_index = command.index('dev.codeharness.cli.HarnessCli') + 1
+        argument_file = cwd / 'cli-arguments.txt'
+        argument_file.write_text('\n'.join(json.dumps(value, ensure_ascii=False)
+                                          for value in command[main_index:]) + '\n', encoding='utf-8')
+        command = [command[0], '--disable-@files', '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8',
+                   '-Dstderr.encoding=UTF-8', *command[1:main_index], '@' + argument_file.name]
     return subprocess.run(command, cwd=cwd, capture_output=True, text=True,
                           encoding='utf-8', timeout=30, **kwargs)
 

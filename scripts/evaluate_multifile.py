@@ -191,15 +191,25 @@ def run_case(args, task, variant, repetition):
             server.initial_sources = {name: (workspace / name).read_bytes() for name in task['sources']}
             serving = threading.Thread(target=server.serve_forever, daemon=True)
             serving.start()
-            command = [args.java, '-jar', str(JAR), '--config', str(config), '--workspace', str(workspace),
+            launch = [args.java, '--disable-@files', '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8',
+                      '-Dstderr.encoding=UTF-8', '-jar', str(JAR)]
+            cli_arguments = ['--config', str(config), '--workspace', str(workspace),
                        '--base-url', f'http://127.0.0.1:{server.server_port}/v1', '--context-budget', str(budget),
                        '--max-iterations', '24', '--parallel-reads', '4', '--allow-commands', '--quiet', '--json',
                        'run', task['prompt'] + ' 检查历史与源码，从过期哈希错误中恢复，更新相关文件并编译。']
+            if os.name == 'nt':
+                # 保留中文评测任务，原始用户要求的精确断言不能验证被 ACP 转换过的文本。
+                argument_file = workspace / 'cli-arguments.txt'
+                argument_file.write_text('\n'.join(json.dumps(value, ensure_ascii=False)
+                                                  for value in cli_arguments) + '\n', encoding='utf-8')
+                cli_arguments = ['@' + argument_file.name]
+            command = launch + cli_arguments
             started = time.perf_counter()
             try:
                 environment = dict(os.environ)
                 environment.pop('HARNESS_MULTIFILE_UNUSED', None)
-                completed = subprocess.run(command, capture_output=True, timeout=args.timeout, env=environment)
+                completed = subprocess.run(command, cwd=workspace, capture_output=True,
+                                           timeout=args.timeout, env=environment)
                 elapsed = (time.perf_counter() - started) * 1000
                 try:
                     result = json.loads(completed.stdout)

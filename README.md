@@ -51,7 +51,7 @@ ylc doctor
 
 请将示例项目路径换成真实目录。安装器在当前 PowerShell 中执行时会刷新本终端 PATH；通过另一个进程安装时，完成后重新打开终端。更新运行时可再次运行安装器，已有用户配置保留。**在哪个目录执行 `ylc`，默认就以该目录为工作区。** YAML 中旧的 `workspace` 字段保留解析兼容，但不再改变工作区；只有显式传入 `--workspace "E:\另一个项目"`（或 `-w`）才会切换。`--config "C:\配置\另一个厂商.yaml"` 仅选择配置，不切换工作区。进入后输入 `/status` 可核对实际工作区。
 
-不安装也能在任意目录用绝对路径启动：源码版 `& "E:\github\YLCoder-harness\ylc.cmd"`，便携版 `& "C:\工具\YLCoder-harness\bin\ylc.cmd"`。启动器根据自身位置找到 jar，并保留调用目录。Linux/macOS 可执行 `python3 scripts/install.py`，再自行把 `~/.local/share/YLCoder-harness/bin` 加入 PATH；这部分尚未完成 Linux/macOS 平台验收。完整安装与故障处理见[中文使用手册](使用手册.md)。
+不安装也能在任意目录用绝对路径启动：源码版 `& "E:\github\YLCoder-harness\ylc.cmd"`，便携版 `& "C:\工具\YLCoder-harness\bin\ylc.cmd"`。启动器根据自身位置找到 jar，并保留调用目录。Linux/macOS 可执行 `python3 scripts/install.py`，再自行把 `~/.local/share/YLCoder-harness/bin` 加入 PATH；Ubuntu Java 21 已通过公开 CI 的离线安装与运行验收，其他 Linux 发行版和 macOS 尚未验收。完整安装与故障处理见[中文使用手册](使用手册.md)及[验证记录](docs/VERIFICATION.md)。
 
 不指定子命令时，CLI 可以连续接受任务。输入 `/project` 可立即查看本地工作区的顶层文件名，不调用模型、不读取文件正文；输入“分析当前项目”才会让模型选择文件并分析。`/status` 显示工作区、模型、厂商、接口协议、完整会话 ID、保存状态和当前进程累计用量，`/help` 显示帮助，`/exit` 退出。未知的斜杠命令会在本地提示，不会发送给模型。
 

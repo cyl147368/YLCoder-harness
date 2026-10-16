@@ -53,7 +53,7 @@ python3 scripts/install.py
 export PATH="$HOME/.local/share/YLCoder-harness/bin:$PATH"
 ```
 
-请将 PATH 设置加入所用 shell 的启动文件，使新终端也能找到命令。该安装器默认将运行时放入 `~/.local/share/YLCoder-harness`，只在缺少时创建用户配置；正常运行不需要 Python。Linux/macOS 安装和运行尚未完成平台验收。
+请将 PATH 设置加入所用 shell 的启动文件，使新终端也能找到命令。该安装器默认将运行时放入 `~/.local/share/YLCoder-harness`，只在缺少时创建用户配置；正常运行不需要 Python。Ubuntu Java 21 已通过公开 CI 的离线安装与运行验收；其他 Linux 发行版和 macOS 尚未验收。
 
 包内不包含工作区、凭据或会话。自定义厂商 jar 可配合 `java -cp` 和 `dev.codeharness.cli.HarnessCli` 使用，见 README.md。
 

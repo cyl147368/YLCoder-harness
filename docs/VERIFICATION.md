@@ -30,6 +30,8 @@ python scripts/smoke_distribution.py
 
 完整本地验收集合见 [CI 配置](../.github/workflows/verify.yml)。CI 中配置了 Windows 和 Ubuntu；本机记录不能代替远端 CI 的实际结果。
 
+2026-10-16，Java 21 的 Ubuntu 完整离线 CI 已通过，覆盖模块测试、模拟厂商、上下文评测、便携包、安装、外部 SPI 和交互恢复，见[该次运行](https://github.com/cyl147368/YLCoder-harness/actions/runs/38887458062)。该记录只说明此运行的 Ubuntu 作业结果；其他平台以[当前 CI](https://github.com/cyl147368/YLCoder-harness/actions)为准，macOS 尚未验收。
+
 ## 限制
 
 本轮没有调用真实厂商，协议支持不代表每家服务和每个模型组合都经过线上验证。历史自定义网关实测见 [CodeGo 评测](CODEGO_EVALUATION.md)，其时间、模型和样本范围不能推广为通用速度或费用承诺。
