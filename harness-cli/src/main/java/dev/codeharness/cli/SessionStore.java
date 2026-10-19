@@ -20,9 +20,13 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.FileAttribute;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.FileTime;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Instant;
 import java.util.List;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -65,6 +69,42 @@ public final class SessionStore {
     }
 
     public String newId() { return UUID.randomUUID().toString(); }
+
+    public record Summary(String id, String provider, String model, String status, String updatedAt, String task) {}
+    private record Candidate(String id, FileTime modified) {}
+
+    /** 最多读取最近的指定数量检查点；只返回列表需要的摘要，不保留整段对话。 */
+    public List<Summary> recent(int limit) throws IOException {
+        if (limit < 1 || limit > 50) throw new IllegalArgumentException("会话列表数量必须在 1 到 50 之间");
+        verifyDirectory(root);
+        verifyDirectory(state);
+        verifyDirectory(directory);
+        List<Candidate> candidates;
+        try (var files = Files.list(directory)) {
+            candidates = files.map(file -> {
+                String name = file.getFileName().toString();
+                if (!name.matches("[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}\\.json")) return null;
+                try {
+                    var attributes = Files.readAttributes(file, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+                    return attributes.isRegularFile() ? new Candidate(name.substring(0, name.length() - 5), attributes.lastModifiedTime()) : null;
+                } catch (IOException failure) { return null; }
+            }).filter(java.util.Objects::nonNull)
+                    .sorted(Comparator.comparing(Candidate::modified).reversed().thenComparing(Candidate::id))
+                    .limit(limit).toList();
+        }
+        var summaries = new ArrayList<Summary>();
+        for (Candidate candidate : candidates) {
+            try {
+                Session session = load(candidate.id());
+                String task = session.transcript().stream().filter(message -> message.role() == ChatMessage.Role.USER)
+                        .map(ChatMessage::content).findFirst().orElse("（没有用户任务）");
+                int end = task.offsetByCodePoints(0, Math.min(80, task.codePointCount(0, task.length())));
+                summaries.add(new Summary(session.id(), session.provider(), session.model(), session.status(),
+                        session.updatedAt(), task.substring(0, end) + (end < task.length() ? "…" : "")));
+            } catch (IOException failure) { /* 损坏、已移除或重定向的检查点不能参与恢复。 */ }
+        }
+        return List.copyOf(summaries);
+    }
 
     public Session load(String id) throws IOException {
         Path file = path(id, ".json");

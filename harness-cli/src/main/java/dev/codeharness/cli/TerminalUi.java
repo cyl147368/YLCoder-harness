@@ -3,6 +3,7 @@ package dev.codeharness.cli;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.codeharness.core.agent.AgentResult;
 import dev.codeharness.core.model.ToolCall;
+import dev.codeharness.core.model.TokenUsage;
 import dev.codeharness.cli.approval.CommandReview;
 import java.io.PrintWriter;
 import java.nio.file.Path;
@@ -57,7 +58,7 @@ final class TerminalUi implements AutoCloseable {
         out.println();
         out.println("  " + style("1;36", "ylc") + "  " + style("90", "YLCoder-harness · " + brief(safe(workspace.toString()), 48)));
         out.println("  " + style("36", "/project") + "  " + style("36", "/status") + "  "
-                + style("36", "/help") + "  " + style("36", "/exit"));
+                + style("36", "/resume") + "  " + style("36", "/help") + "  " + style("36", "/exit"));
         out.println();
         out.flush();
     }
@@ -111,6 +112,7 @@ final class TerminalUi implements AutoCloseable {
         section(out, "帮助");
         out.println("  /project  查看本地项目概览，不调用模型");
         out.println("  /status   查看连接、工作区、进程累计用量和完整会话 ID");
+        out.println("  /resume   列出历史会话；/resume 序号或会话ID 切换后继续输入任务");
         out.println("  /help     显示帮助");
         out.println("  /exit     退出");
         out.println();
@@ -119,6 +121,51 @@ final class TerminalUi implements AutoCloseable {
         out.println(saved ? "  继续会话：ylc resume " + safe(session) : "  尚未保存任何任务。请先提交任务，再继续此会话。");
         out.println();
         out.flush();
+    }
+
+    void sessions(java.util.List<SessionStore.Summary> sessions, String currentId) {
+        beforeOutput();
+        section(out, "历史会话");
+        if (sessions.isEmpty()) {
+            out.println("  当前工作区没有可恢复的会话。先提交一项任务，完成或中断后会自动保存检查点。");
+        } else {
+            var format = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+                    .withZone(java.time.ZoneId.systemDefault());
+            for (int index = 0; index < sessions.size(); index++) {
+                var session = sessions.get(index);
+                String status = switch (session.status()) {
+                    case "COMPLETED" -> "已完成";
+                    case "FAILED" -> "未完成";
+                    case "RUNNING" -> "运行中或已中断";
+                    case "CANCELLED" -> "已取消";
+                    case "MAX_ITERATIONS" -> "达到调用上限";
+                    default -> safe(session.status());
+                };
+                out.println("  " + (index + 1) + ". " + format.format(java.time.Instant.parse(session.updatedAt()))
+                        + " · " + status + " · " + brief(safe(session.model()), 28));
+                out.println("     " + brief(safe(session.task()), 68));
+                out.println("     " + safe(session.id()) + (session.id().equals(currentId) ? "（当前）" : ""));
+                out.println();
+            }
+            out.println("  输入 /resume 1 恢复第 1 项，或 /resume 完整会话ID；输入其他内容可继续当前会话。");
+        }
+        out.println("  仅查看当前工作区最近 20 个检查点；无效或损坏的检查点不会列出。此操作不调用模型。");
+        out.println();
+        out.flush();
+    }
+
+    synchronized void resumed(String id, UsageDashboard.Snapshot process) {
+        beforeOutput();
+        answerStarted = progressStarted = false;
+        taskStarted = 0;
+        elapsedSeconds = 0;
+        out.println();
+        out.println("  已恢复会话：" + safe(id));
+        out.println("  对话已载入。直接输入下一项任务即可继续；尚未请求模型。");
+        out.println();
+        out.flush();
+        live(UsageDashboard.Snapshot.empty("current-task"), process,
+                new CommandReview.Stats(0, 0, 0, 0, TokenUsage.ZERO, 0), 0, 0, "就绪");
     }
 
     void status(Path workspace, String session, boolean saved, UsageDashboard.Snapshot process) {

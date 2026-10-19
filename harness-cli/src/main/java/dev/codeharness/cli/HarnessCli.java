@@ -125,18 +125,23 @@ public final class HarnessCli implements Callable<Integer> {
 
     @Override public Integer call() throws Exception {
         if (json) throw new IllegalArgumentException("请在 run 或 resume 中使用 --json");
-        try (Runtime runtime = prepare(null)) { return interactive(runtime); }
+        return interactive(prepare(null));
     }
 
     private Integer interactive(Runtime runtime) throws Exception {
         interactiveMode = true;
         String id = runtime.store.newId();
+        InteractiveSession current;
+        try { current = new InteractiveSession(runtime, id, runtime.store.lock(id)); }
+        catch (Exception failure) { runtime.close(); throw failure; }
         List<ChatMessage> history = new ArrayList<>();
         history.add(ChatMessage.system(PROMPT));
-        ui().welcome(runtime.workspace, runtime.config.provider, runtime.config.model, id);
         int lastExitCode = 0;
         boolean savedTask = false;
-        try (TerminalUi display = ui(); SessionStore.Lease ignored = runtime.store.lock(id)) {
+        List<SessionStore.Summary> listed = List.of();
+        try (TerminalUi display = ui()) {
+            activate(runtime);
+            display.welcome(runtime.workspace, runtime.config.provider, runtime.config.model, id);
             display.openBottom(input().isTerminal() && out() == consoleOut && err() == consoleErr
                     && !noColor && System.getenv("NO_COLOR") == null && !"dumb".equals(System.getenv("TERM")));
             while (true) {
@@ -146,15 +151,58 @@ public final class HarnessCli implements Callable<Integer> {
                 if (line == null || line.trim().equals("/exit")) break;
                 if (line.isBlank()) continue;
                 if (line.trim().equals("/help")) {
-                    ui().help(savedTask, id);
+                    ui().help(savedTask, current.id);
                     continue;
                 }
                 if (line.trim().equals("/status")) {
-                    ui().status(runtime.workspace, id, savedTask, usageDashboard.process());
+                    ui().status(current.runtime.workspace, current.id, savedTask, usageDashboard.process());
                     continue;
                 }
                 if (line.trim().equals("/project")) {
-                    printProject(runtime.workspace);
+                    printProject(current.runtime.workspace);
+                    continue;
+                }
+                String[] command = line.strip().split("\\s+", 2);
+                if (command[0].equals("/resume")) {
+                    if (command.length == 1) {
+                        listed = List.of();
+                        try {
+                            listed = current.runtime.store.recent(20);
+                            ui().sessions(listed, current.id);
+                        } catch (java.io.IOException failure) {
+                            out().println("无法读取当前工作区的会话列表，请检查目录权限。");
+                        }
+                        continue;
+                    }
+                    String target = command[1];
+                    if (target.matches("[0-9]+")) {
+                        int index;
+                        try { index = Integer.parseInt(target); }
+                        catch (NumberFormatException failure) { index = 0; }
+                        if (index < 1 || index > listed.size()) {
+                            out().println("序号无效。请先输入 /resume 查看列表，再输入 /resume 序号。");
+                            continue;
+                        }
+                        target = listed.get(index - 1).id();
+                    }
+                    if (target.equals(current.id)) {
+                        out().println("已在此会话中，直接输入下一项任务即可。");
+                        continue;
+                    }
+                    InteractiveSession next;
+                    try { next = openSavedSession(current.runtime.store, target); }
+                    catch (Exception failure) {
+                        // 不回显底层异常，避免配置解析或扩展错误泄露凭据；旧会话保持可用。
+                        out().println("无法恢复会话：请检查会话 ID、检查点是否完整、是否被其他进程占用，以及厂商配置是否有效。当前会话未改变。");
+                        continue;
+                    }
+                    try { current.close(); } finally { current = next; }
+                    history = new ArrayList<>(current.runtime.saved.transcript());
+                    savedTask = true;
+                    lastExitCode = 0;
+                    activate(current.runtime);
+                    usageDashboard.beginTask();
+                    ui().resumed(current.id, usageDashboard.process());
                     continue;
                 }
                 if (line.stripLeading().startsWith("/")) {
@@ -162,14 +210,26 @@ public final class HarnessCli implements Callable<Integer> {
                     continue;
                 }
                 history.add(ChatMessage.user(line));
-                AgentResult result = execute(runtime, id, history);
+                AgentResult result = execute(current.runtime, current.id, history);
                 savedTask = true;
                 lastExitCode = exitCode(result);
                 history = new ArrayList<>(result.transcript());
-                printResult(id, result);
+                printResult(current.id, result);
             }
-        }
+        } finally { current.close(); }
         return lastExitCode;
+    }
+
+    private InteractiveSession openSavedSession(SessionStore store, String id) throws Exception {
+        SessionStore.Lease lease = store.lock(id);
+        try { return new InteractiveSession(prepare(id, store), id, lease); }
+        catch (Exception failure) { lease.close(); throw failure; }
+    }
+
+    private record InteractiveSession(Runtime runtime, String id, SessionStore.Lease lease) implements AutoCloseable {
+        @Override public void close() throws java.io.IOException {
+            try { lease.close(); } finally { runtime.close(); }
+        }
     }
 
     private void printProject(Path workspace) {
@@ -194,12 +254,16 @@ public final class HarnessCli implements Callable<Integer> {
     }
 
     private Runtime prepare(String resumeId) throws Exception {
+        return prepare(resumeId, null);
+    }
+
+    private Runtime prepare(String resumeId, SessionStore existingStore) throws Exception {
         Path cwd = Path.of("").toAbsolutePath().normalize();
         // 启动目录就是默认工作区；旧配置中的 workspace 不能把操作重定向到其他项目。
         Path root = workspace == null ? cwd : cwd.resolve(workspace).normalize();
         HarnessConfig config = ConfigLoader.load(root, configFile == null ? null : cwd.resolve(configFile), trustProjectConfig);
         if (!Files.isDirectory(root)) throw new IllegalArgumentException("工作区不存在：" + root);
-        SessionStore store = new SessionStore(root);
+        SessionStore store = existingStore == null ? new SessionStore(root) : existingStore;
         SessionStore.Session saved = resumeId == null ? null : store.load(resumeId);
         if (saved != null) { config.provider = saved.provider(); config.model = saved.model(); }
         if (provider != null) config.provider = provider;
@@ -229,11 +293,6 @@ public final class HarnessCli implements Callable<Integer> {
                 key, Duration.ofSeconds(config.timeoutSeconds), headers);
         ChatModel selectedModel = new ProviderRegistry().create(providerConfig);
         ChatModel chatModel = usageDashboard.track(noStream ? selectedModel::complete : selectedModel);
-        activeProvider = config.provider;
-        activeModel = config.model;
-        providerHost = providerConfig.baseUri() == null || providerConfig.baseUri().getHost() == null
-                ? "" : providerConfig.baseUri().getHost();
-        ui().connection(activeProvider, activeModel, providerHost);
         CommandReview reviewer = null;
         if (!allowCommands && !config.permissions.allowCommands && !noAutoReview && config.permissions.autoReview) {
             var reviewProvider = new ProviderConfig(providerConfig.providerId(), providerConfig.model(),
@@ -250,6 +309,14 @@ public final class HarnessCli implements Callable<Integer> {
         try { return new Runtime(config, root, store, new CodeAgent(chatModel, mcp.combine(registry),
                 new ContextCompactor(inputCounter)), options, saved, mcp, reviewer); }
         catch (RuntimeException failure) { mcp.close(); throw failure; }
+    }
+
+    private void activate(Runtime runtime) {
+        activeProvider = runtime.config.provider;
+        activeModel = runtime.config.model;
+        URI endpoint = runtime.config.baseUrl == null || runtime.config.baseUrl.isBlank() ? null : URI.create(runtime.config.baseUrl);
+        providerHost = endpoint == null || endpoint.getHost() == null ? "" : endpoint.getHost();
+        ui().connection(activeProvider, activeModel, providerHost);
     }
 
     private CommandApproval.Decision approve(CommandApproval.Request request, HarnessConfig config, CommandReview reviewer) {
@@ -298,6 +365,7 @@ public final class HarnessCli implements Callable<Integer> {
     }
 
     private AgentResult execute(Runtime runtime, String id, List<ChatMessage> history) throws Exception {
+        activate(runtime);
         streamingOutput = new StreamingOutput(out(), !json);
         taskToolCount.set(0);
         usageDashboard.beginTask();

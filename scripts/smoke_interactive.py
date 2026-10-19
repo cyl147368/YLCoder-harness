@@ -94,13 +94,15 @@ def main():
             empty_workspace.mkdir()
             empty_common = list(common)
             empty_common[empty_common.index('--workspace') + 1] = str(empty_workspace)
-            empty = subprocess.run(empty_common, input='/help\n\n/exit\n', capture_output=True,
+            empty = subprocess.run(empty_common, input='/help\n/resume\n/resume 1\n\n/exit\n', capture_output=True,
                                    text=True, encoding='utf-8', env=environment, timeout=15)
             assert empty.returncode == 0, (empty.stdout, empty.stderr)
             assert any(marker in empty.stdout for marker in ('No task has been saved yet.', '尚未保存任何任务。'))
             assert all(marker not in empty.stdout for marker in ('Resume with:', '继续会话：'))
             assert not list((empty_workspace / '.harness/sessions').glob('*.json'))
             assert not server.requests
+            assert '当前工作区没有可恢复的会话' in empty.stdout
+            assert '序号无效' in empty.stdout
             with subprocess.Popen(common, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                   text=True, encoding='utf-8', env=environment) as interactive:
                 try:
@@ -150,6 +152,21 @@ def main():
             assert '已恢复交互会话。' in resumed.stdout
             assert len(list((workspace / '.harness/sessions').glob('*.json'))) == 1
             assert len(server.requests) == 6
+            # 交互恢复只载入本地对话，直到用户提交下一项任务才请求模型。
+            before = sessions[0].read_bytes()
+            selected = subprocess.run(common, input='/resume\n/resume 1\n/status\n/exit\n',
+                                      capture_output=True, text=True, encoding='utf-8', env=environment, timeout=20)
+            assert selected.returncode == 0, (selected.stdout, selected.stderr)
+            assert '已恢复会话：' + session['id'] in selected.stdout
+            assert '（已保存）' in selected.stdout
+            assert len(server.requests) == 6 and sessions[0].read_bytes() == before
+            continued = subprocess.run(common, input=f'/resume {session["id"]}\n继续验证原任务。\n/exit\n',
+                                       capture_output=True, text=True, encoding='utf-8', env=environment, timeout=20)
+            assert continued.returncode == 0, (continued.stdout, continued.stderr)
+            assert '已恢复交互会话。' in continued.stdout
+            assert len(server.requests) == 7
+            assert server.requests[-1]['messages'][-1]['content'] == '继续验证原任务。'
+            assert len(list((workspace / '.harness/sessions').glob('*.json'))) == 1
             # EOF 保留最近任务状态；之后成功的任务可以恢复失败的交互轮次。
             for recover in (False, True):
                 server.status_case = True
@@ -169,10 +186,11 @@ def main():
                 assert len(server.requests) == (2 if recover else 1), '意外重试或交互输入丢失'
                 assert re.search(r'^\s*会话\s+' + re.escape(checkpoint['id']) + r'（已保存）\s*$',
                                  status_run.stdout, re.MULTILINE), '/status 缺少完整已保存会话标识'
-            print(json.dumps({'status': 'PASS', 'modelRequests': 9,
+            print(json.dumps({'status': 'PASS', 'modelRequests': 10,
                               'checks': ['空会话帮助与未保存检查点一致', '已保存会话的帮助提供恢复方法',
                                          '帮助与空行不调用模型', '同一交互进程处理两个任务', '每个任务保存检查点',
-                                         '独立进程恢复', '有序工具历史及最终文件状态',
+                                         '独立进程恢复', '交互会话列表、序号和完整 ID 恢复', '仅切换会话不请求模型或改写检查点',
+                                         '有序工具历史及最终文件状态',
                                          'EOF 返回最近的状态', '失败轮次后完成成功任务']}, indent=2))
 
 
