@@ -41,7 +41,8 @@ def main():
         raise ValueError('根 pom.xml 必须声明安全的字面量版本')
     jar = ROOT / f'harness-cli/target/harness-cli-{version}-all.jar'
     with zipfile.ZipFile(jar) as archive:
-        for entry in ('dev/codeharness/cli/HarnessCli.class', 'picocli/CommandLine.class',
+        for entry in ('dev/codeharness/cli/HarnessCli.class', 'dev/codeharness/cli/tools/UnifiedDiff.class',
+                      'dev/codeharness/cli/tools/UnifiedDiff$Lines.class', 'picocli/CommandLine.class',
                       'dev/langchain4j/model/openai/OpenAiChatModel.class'):
             if entry not in archive.namelist():
                 raise ValueError('不是完整的 shaded CLI jar：' + entry)

@@ -26,6 +26,61 @@ class TerminalInputWorkflowTest {
     private static final String SECOND = "验证下一个任务保持独立";
     @TempDir Path workspace;
 
+    @Test void ctrlCAtPromptExitsWithoutSendingOrSavingInput() throws Exception {
+        FakeInput input = new FakeInput(true, "不会发送的输入");
+        input.interruptAfter = 0;
+        try (Provider fixture = new Provider()) {
+            Outcome outcome = execute(input, fixture);
+            assertEquals(130, outcome.code, outcome.err);
+            assertTrue(fixture.requests.isEmpty());
+            assertTrue(new SessionStore(workspace).recent(20).isEmpty());
+            assertTrue(outcome.out.contains("已退出会话"));
+            assertTrue(input.restored && input.closed);
+            assertFalse(Thread.currentThread().isInterrupted());
+        }
+    }
+
+    @Test void ctrlCDuringApprovalNeverExecutesOrMakesAnotherRequest() throws Exception {
+        FakeInput input = new FakeInput(true, FIRST, "y", SECOND);
+        input.interruptAfter = 1;
+        try (Provider fixture = new Provider()) {
+            Outcome outcome = execute(input, fixture);
+            assertEquals(130, outcome.code, outcome.err);
+            assertEquals(1, fixture.requests.size());
+            assertFalse(Files.exists(workspace.resolve("approved.txt")));
+            assertCancelledCheckpoint();
+            assertTrue(input.restored && input.closed);
+            assertFalse(Thread.currentThread().isInterrupted());
+        }
+    }
+
+    @Test void ctrlCWhileWaitingForModelSavesCancellationAndReleasesSession() throws Exception {
+        FakeInput input = new FakeInput(true, FIRST, SECOND);
+        try (Provider fixture = new Provider()) {
+            fixture.beforeResponse = () -> input.interrupt.run();
+            Outcome outcome = execute(input, fixture);
+            assertEquals(130, outcome.code, outcome.err);
+            assertEquals(1, fixture.requests.size());
+            assertEquals(1, input.reads);
+            assertCancelledCheckpoint();
+            assertFalse(outcome.err.contains("错误："), outcome.err);
+            assertTrue(input.restored && input.closed);
+            assertFalse(Thread.currentThread().isInterrupted());
+        }
+    }
+
+    private void assertCancelledCheckpoint() throws Exception {
+        SessionStore store = new SessionStore(workspace);
+        var saved = store.recent(20);
+        assertEquals(1, saved.size());
+        assertEquals("CANCELLED", saved.getFirst().status());
+        String id = saved.getFirst().id();
+        assertEquals(List.of(FIRST), store.load(id).transcript().stream()
+                .filter(message -> message.role() == dev.codeharness.core.model.ChatMessage.Role.USER)
+                .map(dev.codeharness.core.model.ChatMessage::content).toList());
+        try (var lease = store.lock(id)) { assertTrue(lease.lock().isValid()); }
+    }
+
     @Test void automaticReviewNeverConsumesTheNextTerminalOrPipedTask() throws Exception {
         for (boolean terminal : List.of(true, false)) {
             FakeInput input = new FakeInput(terminal, FIRST, SECOND, "/exit");
@@ -190,13 +245,22 @@ class TerminalInputWorkflowTest {
         private final List<String> lines;
         private int reads;
         private int failAfter = Integer.MAX_VALUE;
+        private int interruptAfter = Integer.MAX_VALUE;
+        private volatile Runnable interrupt = () -> { };
+        private boolean restored, closed;
         FakeInput(boolean terminal, String... lines) { this.terminal = terminal; this.lines = List.of(lines); }
         @Override public String readLine() throws IOException {
+            if (reads >= interruptAfter) { reads++; interrupt.run(); return null; }
             if (reads >= failAfter) throw new IOException("夹具终端读取失败");
             int index = reads++;
             return index < lines.size() ? lines.get(index) : null;
         }
         @Override public boolean isTerminal() { return terminal; }
+        @Override public Runnable onInterrupt(Runnable handler) {
+            interrupt = handler;
+            return () -> { restored = true; interrupt = () -> { }; };
+        }
+        @Override public void closeEditor() { closed = true; }
     }
 
     private static final class Provider implements AutoCloseable {
@@ -204,6 +268,7 @@ class TerminalInputWorkflowTest {
         private final List<JsonNode> requests = new CopyOnWriteArrayList<>();
         private final List<JsonNode> reviews = new CopyOnWriteArrayList<>();
         private final List<Throwable> failures = new CopyOnWriteArrayList<>();
+        private volatile Runnable beforeResponse = () -> { };
         Provider() throws IOException { this(false, true); }
         Provider(boolean reviewMode, boolean approveReview) throws IOException {
             server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -223,6 +288,7 @@ class TerminalInputWorkflowTest {
                         return;
                     }
                     requests.add(request);
+                    beforeResponse.run();
                     int number = requests.size();
                     Map<String, Object> message;
                     if (number == 1) {

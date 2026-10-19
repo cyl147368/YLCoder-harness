@@ -37,15 +37,46 @@ foreach ($directory in @($bin, $lib, $configRoot)) {
     [IO.Directory]::CreateDirectory($directory) | Out-Null
 }
 
+# Java 按需加载类；覆盖运行中的 JAR 会导致旧进程出现缺类或 ZIP 错误。
+# 内容寻址的运行包只创建一次，最后原子切换指针，旧进程始终读取原文件。
+$digest = (Get-FileHash -LiteralPath $jar -Algorithm SHA256).Hash.ToLowerInvariant()
+$runtimeName = "ylc-$digest.jar"
+$runtimeJar = Join-Path $lib $runtimeName
+if (-not (Test-Path -LiteralPath $runtimeJar)) {
+    $stagedJar = Join-Path $lib ('.runtime-' + [Guid]::NewGuid().ToString('N') + '.tmp')
+    try {
+        Copy-Item -LiteralPath $jar -Destination $stagedJar
+        if ((Get-FileHash -LiteralPath $stagedJar -Algorithm SHA256).Hash.ToLowerInvariant() -ne $digest) {
+            throw '运行包在安装期间发生变化，请重新构建后安装。'
+        }
+        try { [IO.File]::Move($stagedJar, $runtimeJar) }
+        catch { if (-not (Test-Path -LiteralPath $runtimeJar)) { throw } }
+    } finally {
+        if (Test-Path -LiteralPath $stagedJar) { Remove-Item -LiteralPath $stagedJar }
+    }
+}
+if ((Get-FileHash -LiteralPath $runtimeJar -Algorithm SHA256).Hash.ToLowerInvariant() -ne $digest) {
+    throw '已存在的版本运行包校验失败；为保护运行中的会话，本次安装已停止。'
+}
+
 function Copy-RuntimeFile([string]$Source, [string]$Destination) {
     if ([IO.Path]::GetFullPath($Source) -ine [IO.Path]::GetFullPath($Destination)) {
         Copy-Item -LiteralPath $Source -Destination $Destination -Force
     }
 }
-Copy-RuntimeFile $jar (Join-Path $lib 'ylc.jar')
 Copy-RuntimeFile (Join-Path $launcherDirectory 'ylc.cmd') (Join-Path $bin 'ylc.cmd')
 Copy-RuntimeFile (Join-Path $launcherDirectory 'ylc') (Join-Path $bin 'ylc')
 Copy-RuntimeFile $template (Join-Path $installRoot 'config.example.yaml')
+
+$pointer = Join-Path $lib 'current-runtime.txt'
+$stagedPointer = Join-Path $lib ('.pointer-' + [Guid]::NewGuid().ToString('N') + '.tmp')
+try {
+    [IO.File]::WriteAllText($stagedPointer, $runtimeName + "`n", [Text.Encoding]::ASCII)
+    if (Test-Path -LiteralPath $pointer) { [IO.File]::Replace($stagedPointer, $pointer, [NullString]::Value) }
+    else { [IO.File]::Move($stagedPointer, $pointer) }
+} finally {
+    if (Test-Path -LiteralPath $stagedPointer) { Remove-Item -LiteralPath $stagedPointer }
+}
 
 $config = Join-Path $configRoot 'config.yaml'
 # CreateNew 防止重复安装或并发安装覆盖已经填写的密钥。

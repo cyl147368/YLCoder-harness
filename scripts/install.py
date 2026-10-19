@@ -1,9 +1,11 @@
 """安装用户级运行文件；不读取或覆盖已有配置，不执行模型请求。"""
 import argparse
+import hashlib
 import os
 from pathlib import Path
 import shlex
 import shutil
+import tempfile
 import xml.etree.ElementTree as ET
 
 
@@ -20,16 +22,46 @@ def install(install_dir, config_dir):
         jar = ROOT / f'harness-cli/target/harness-cli-{version}-all.jar'
         launchers = ROOT / 'packaging/bin'
     template = ROOT / 'config.example.yaml'
-    sources = {Path('lib/ylc.jar'): jar, Path('bin/ylc'): launchers / 'ylc',
+    sources = {Path('bin/ylc'): launchers / 'ylc',
                Path('bin/ylc.cmd'): launchers / 'ylc.cmd', Path('config.example.yaml'): template}
-    if not all(path.is_file() for path in sources.values()):
+    if not jar.is_file() or not all(path.is_file() for path in sources.values()):
         raise ValueError('缺少安装文件；源码用户请先运行 mvn -B verify，便携包用户请完整解压')
     install_dir, config_dir = install_dir.expanduser().resolve(), config_dir.expanduser().resolve()
+    # 不覆盖 Java 正在按需读取的 JAR；每份内容只发布一次，最后切换启动指针。
+    lib = install_dir / 'lib'
+    lib.mkdir(parents=True, exist_ok=True)
+    digest = hashlib.sha256(jar.read_bytes()).hexdigest()
+    runtime = lib / f'ylc-{digest}.jar'
+    if not runtime.exists():
+        descriptor, staged = tempfile.mkstemp(prefix='.runtime-', suffix='.tmp', dir=lib)
+        staged = Path(staged)
+        try:
+            with os.fdopen(descriptor, 'wb') as stream, jar.open('rb') as source:
+                shutil.copyfileobj(source, stream)
+            if hashlib.sha256(staged.read_bytes()).hexdigest() != digest:
+                raise ValueError('运行包在安装期间发生变化，请重新构建后安装')
+            # 硬链接以排他方式发布文件，两个安装进程也不会覆盖已发布的运行包。
+            try:
+                os.link(staged, runtime)
+            except FileExistsError:
+                pass
+        finally:
+            staged.unlink(missing_ok=True)
+    if hashlib.sha256(runtime.read_bytes()).hexdigest() != digest:
+        raise ValueError('已存在的版本运行包校验失败；为保护运行中的会话，本次安装已停止')
     for name, source in sources.items():
         target = install_dir / name
         target.parent.mkdir(parents=True, exist_ok=True)
         if source.resolve() != target.resolve():
             shutil.copyfile(source, target)
+    descriptor, staged = tempfile.mkstemp(prefix='.pointer-', suffix='.tmp', dir=lib)
+    staged = Path(staged)
+    try:
+        with os.fdopen(descriptor, 'w', encoding='ascii', newline='\n') as stream:
+            stream.write(runtime.name + '\n')
+        os.replace(staged, lib / 'current-runtime.txt')
+    finally:
+        staged.unlink(missing_ok=True)
     if os.name != 'nt':
         (install_dir / 'bin/ylc').chmod(0o755)
     config_dir.mkdir(parents=True, exist_ok=True)

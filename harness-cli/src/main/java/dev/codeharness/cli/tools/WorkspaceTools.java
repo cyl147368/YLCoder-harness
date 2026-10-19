@@ -406,6 +406,7 @@ public final class WorkspaceTools {
                 builder.environment().put("GIT_CONFIG_NOSYSTEM", "1");
                 builder.environment().put("GIT_CONFIG_GLOBAL", windows ? "NUL" : "/dev/null");
                 builder.environment().put("GIT_CONFIG_SYSTEM", windows ? "NUL" : "/dev/null");
+                builder.environment().put("GIT_NO_LAZY_FETCH", "1");
             }
             builder.redirectErrorStream(true);
             if (Thread.currentThread().isInterrupted()) throw new InterruptedException("命令在启动前被中断");

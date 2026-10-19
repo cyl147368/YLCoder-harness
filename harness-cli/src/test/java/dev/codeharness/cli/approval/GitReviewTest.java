@@ -23,7 +23,7 @@ class GitReviewTest {
     private static final ObjectMapper JSON = new ObjectMapper();
     @TempDir Path temporary;
 
-    @Test void onlyBranchIsAutomaticWhileStatusAndDiffCanExecuteFilters() throws Exception {
+    @Test void repositoriesWithFiltersStillRequireManualStatusAndDiffApproval() throws Exception {
         Path root = Files.createDirectory(temporary.resolve("repo"));
         Path git = availableGit(root);
         command(git, root, "init", "--quiet");
@@ -70,6 +70,75 @@ class GitReviewTest {
         assertArrayEquals(oldIndex, Files.readAllBytes(index));
         assertEquals(oldTime, Files.getLastModifiedTime(index));
         assertEquals(1, reviewer.stats().requests(), "status/diff 不得发送给模型后冒险自动放行");
+    }
+
+    @Test void commonStatusVariantsReachAiAndRunWithoutHelpersOrIndexWrites() throws Exception {
+        Path root = Files.createDirectory(temporary.resolve("ordinary-repo"));
+        Path git = availableGit(root);
+        command(git, root, "init", "--quiet");
+        Files.writeString(root.resolve("tracked.txt"), "before\n");
+        command(git, root, "add", "tracked.txt");
+        command(git, root, "config", "core.fsmonitor", "echo helper > helper-invoked.txt");
+        command(git, root, "config", "core.pager", "echo pager > pager-invoked.txt");
+        Files.writeString(root.resolve("tracked.txt"), "after with changes\n");
+        Files.writeString(root.resolve("new.txt"), "private-file-content-not-for-reviewer");
+        Path index = root.resolve(".git/index");
+        byte[] before = Files.readAllBytes(index);
+        var timestamp = Files.getLastModifiedTime(index);
+        var received = new ArrayList<dev.codeharness.core.model.ChatRequest>();
+        var reviewer = new CommandReview(request -> { received.add(request); return ChatResponse.text("{\"decision\":\"approve\"}"); },
+                Duration.ofSeconds(2), 16, ignored -> {});
+        var tools = WorkspaceTools.createWithCommandApproval(root, request -> {
+            var result = reviewer.review(request);
+            assertTrue(result.approved(), result.reason());
+            assertTrue(result.arguments().contains("--ignore-submodules=all"));
+            return CommandApproval.Decision.direct(result.arguments());
+        });
+        List<String> variants = List.of("git status", "git status --short", "git status -s", "git status --porcelain",
+                "git status --porcelain=v1", "git status --porcelain=v2", "git status -sb",
+                "git status --short --branch", "git status --branch --short");
+        for (String text : variants) {
+            String result = tools.find("run_command").orElseThrow().execute(JSON.writeValueAsString(java.util.Map.of("command", text)));
+            assertTrue(result.startsWith("退出码：0"), result);
+            assertTrue(result.contains("tracked.txt") && result.contains("new.txt"), result);
+        }
+        assertEquals(variants.size(), received.size());
+        for (var request : received) {
+            assertTrue(request.tools().isEmpty());
+            assertEquals(2, request.messages().size());
+            assertTrue(request.messages().getFirst().content().contains("工作树状态"));
+            assertFalse(request.messages().getLast().content().contains("private-file-content"));
+        }
+        assertFalse(Files.exists(root.resolve("helper-invoked.txt")));
+        assertFalse(Files.exists(root.resolve("pager-invoked.txt")));
+        assertArrayEquals(before, Files.readAllBytes(index));
+        assertEquals(timestamp, Files.getLastModifiedTime(index));
+        assertTrue(reviewer.review(new CommandApproval.Request(root.toRealPath(), "git status --short")).approved());
+        assertEquals(1, reviewer.stats().cacheHits());
+        command(git, root, "config", "filter.new.clean", "echo must-not-run");
+        var blocked = reviewer.review(new CommandApproval.Request(root.toRealPath(), "git status --short"));
+        assertFalse(blocked.approved(), "修改仓库配置后不能复用旧批准");
+        assertTrue(blocked.reason().contains("过滤器"));
+        assertEquals(variants.size(), received.size());
+    }
+
+    @Test void aiCanDenyOrdinaryStatusAndChangedConfigurationInvalidatesItsApproval() throws Exception {
+        Path root = Files.createDirectory(temporary.resolve("review-change"));
+        Path git = availableGit(root);
+        command(git, root, "init", "--quiet");
+        var request = new CommandApproval.Request(root.toRealPath(), "git status --short");
+        var denied = new CommandReview(ignored -> ChatResponse.text("{\"decision\":\"manual\"}"),
+                Duration.ofSeconds(2), 8, ignored -> {});
+        assertFalse(denied.review(request).approved());
+        assertEquals(1, denied.stats().requests(), "普通状态命令仍需 AI 审核，不是直接放行");
+        var changing = new CommandReview(ignored -> {
+            try { command(git, root, "config", "status.showUntrackedFiles", "no"); }
+            catch (Exception failure) { throw new IllegalStateException(failure); }
+            return ChatResponse.text("{\"decision\":\"approve\"}");
+        }, Duration.ofSeconds(2), 8, ignored -> {});
+        var result = changing.review(request);
+        assertFalse(result.approved());
+        assertTrue(result.reason().contains("发生变化"));
     }
 
     @Test void unsafeGitOptionsAndExternalRepositoryPointersNeverReachReviewer() throws Exception {

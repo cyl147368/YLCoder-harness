@@ -7,6 +7,27 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 class OpenAiChatStreamTest {
+    @Test void explicitRequestErrorsDoNotSuggestAnImmediateFallback() {
+        for (String code : List.of("invalid_api_key", "insufficient_quota", "rate_limit_exceeded", "invalid_request_error", "401", "403", "429")) {
+            for (String field : List.of("type", "code", "status", "status_code")) {
+                String event = "{\"error\":{\"" + field + "\":\"" + code + "\",\"message\":\"secret\"}}";
+                var failure = assertThrows(ProviderException.class, () -> new OpenAiChatStream(null).onEvent(event));
+                assertFalse(failure.streamFallbackSuggested(), code);
+                assertFalse(failure.getMessage().contains("secret"));
+            }
+        }
+    }
+    @Test void upstreamErrorAndWrongProtocolAreDistinctFromMalformedChunksAndNeverLeakPayload() {
+        for (String event : List.of("{\"error\":{\"message\":\"secret\"}}", "{\"type\":\"response.created\",\"response\":{\"private\":\"secret\"}}")) {
+            var parser = new OpenAiChatStream(null);
+            var failure = assertThrows(ProviderException.class, () -> parser.onEvent(event));
+            assertTrue(failure.streamFallbackSuggested());
+            assertFalse(failure.getMessage().contains("secret"));
+            assertFalse(failure.getMessage().contains("分块结构无效"));
+            assertThrows(ProviderException.class, parser::response);
+        }
+        assertFalse(assertThrows(ProviderException.class, () -> new OpenAiChatStream(null).onEvent("{}")).streamFallbackSuggested());
+    }
     @Test void emitsVisibleTextAndReassemblesParallelArgumentsOnlyAfterDone() {
         var deltas = new ArrayList<String>();
         var parser = new OpenAiChatStream(deltas::add);

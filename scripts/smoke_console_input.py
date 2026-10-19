@@ -29,6 +29,19 @@ class Provider(BaseHTTPRequestHandler):
             assert self.path == '/v1/chat/completions', self.path
             assert self.headers.get('Authorization') is None
             request = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+            scenario = getattr(self.server, 'interrupt_case', None)
+            if scenario in ('model', 'stream'):
+                self.server.requests.append(request)
+                if scenario == 'stream':
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/event-stream')
+                    self.end_headers()
+                    event = {'choices': [{'index': 0, 'delta': {'content': '中断流式输出夹具'}, 'finish_reason': None}]}
+                    self.wfile.write(('data: ' + json.dumps(event) + '\n\n').encode('utf-8'))
+                    self.wfile.flush()
+                (self.server.workspace / 'model-ready').touch()
+                self.server.release.wait(25)
+                return
             assert not request.get('stream')
             self.server.requests.append(request)
             users = [row['content'] for row in request['messages'] if row['role'] == 'user']
@@ -98,6 +111,7 @@ def console_child(options):
     kernel.WriteConsoleInputW.argtypes = [wintypes.HANDLE, ctypes.POINTER(Record), wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
     kernel.GetConsoleScreenBufferInfo.argtypes = [wintypes.HANDLE, ctypes.POINTER(Info)]
     kernel.ReadConsoleOutputW.argtypes = [wintypes.HANDLE, ctypes.POINTER(Cell), Coord, Coord, ctypes.POINTER(Rect)]
+    kernel.GetConsoleMode.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
     for setter in ('SetConsoleCP', 'SetConsoleOutputCP'):
         function = getattr(kernel, setter)
         function.argtypes = [wintypes.UINT]
@@ -111,36 +125,16 @@ def console_child(options):
         return msvcrt.open_osfhandle(value, os.O_RDWR | os.O_BINARY)
 
     inp, out = descriptor('CONIN$'), descriptor('CONOUT$')
-    environment = os.environ.copy()
-    for name in ('JAVA_TOOL_OPTIONS', '_JAVA_OPTIONS', 'JDK_JAVA_OPTIONS', 'YLC_CONSOLE_UNUSED'):
-        environment.pop(name, None)
-    # JVM 启动前的 Windows ACP 可能损坏中文 argv；cwd 仍保留真实中文路径。
-    command = [options.launcher, '--config', 'offline.yaml',
-               '--provider', 'openai-compatible', '--model', 'console-unicode-fixture',
-               '--base-url', options.base_url, '--api-key-env', 'YLC_CONSOLE_UNUSED', '--no-stream']
-    process = subprocess.Popen(command, cwd=options.workspace, env=environment, stdin=inp, stdout=out, stderr=out)
-    try:
-        # 键盘事件进入控制台输入缓冲区；即使 JVM 尚未进入 readLine 也不会丢失。
-        time.sleep(.4)
-        text = '\r'.join((FIRST, SECOND, 'y', THIRD, '/exit')) + '\r'
-        units = text.encode('utf-16-le')
-        records = []
-        for offset in range(0, len(units), 2):
-            unit = chr(int.from_bytes(units[offset:offset + 2], 'little'))
-            for down in (True, False):
-                row = Record()
-                row.type = 1
-                row.event.key.down = down
-                row.event.key.repeat = 1
-                row.event.key.virtual = 0x0d if unit == '\r' else 0
-                row.event.key.character.unicode = unit
-                records.append(row)
-        buffer = (Record * len(records))(*records)
-        written = wintypes.DWORD()
-        if not kernel.WriteConsoleInputW(msvcrt.get_osfhandle(inp), buffer, len(records), ctypes.byref(written)):
-            raise ctypes.WinError(ctypes.get_last_error())
-        assert written.value == len(records), '键盘事件未完整写入'
-        code = process.wait(timeout=25)
+
+    def console_modes():
+        values = []
+        for descriptor in (inp, out):
+            mode = wintypes.DWORD()
+            assert kernel.GetConsoleMode(msvcrt.get_osfhandle(descriptor), ctypes.byref(mode))
+            values.append(mode.value)
+        return values
+
+    def screen_text():
         info = Info()
         output_handle = msvcrt.get_osfhandle(out)
         if not kernel.GetConsoleScreenBufferInfo(output_handle, ctypes.byref(info)):
@@ -152,15 +146,89 @@ def console_child(options):
             raise ctypes.WinError(ctypes.get_last_error())
         lines = [''.join(cell.character.unicode for cell in cells[row * info.size.X:(row + 1) * info.size.X]
                          if not cell.attributes & 0x0200).rstrip() for row in range(height)]
+        return '\n'.join(lines).encode('utf-16-le', errors='surrogatepass').decode('utf-16-le', errors='replace')
+
+    def wait_until(condition):
+        deadline = time.monotonic() + 15
+        while not condition():
+            assert process.poll() is None, ('进程提前退出', process.returncode, screen_text())
+            assert time.monotonic() < deadline, ('等待夹具阶段超时', screen_text())
+            time.sleep(.05)
+
+    def send_keys(text):
+        units = text.encode('utf-16-le')
+        records = []
+        for offset in range(0, len(units), 2):
+            unit = chr(int.from_bytes(units[offset:offset + 2], 'little'))
+            for down in (True, False):
+                row = Record()
+                row.type = 1
+                row.event.key.down = down
+                row.event.key.repeat = 1
+                row.event.key.virtual = 0x43 if unit == '\x03' else 0x0d if unit == '\r' else 0x09 if unit == '\t' else 0
+                row.event.key.control = 0x0008 if unit == '\x03' else 0
+                row.event.key.character.unicode = unit
+                records.append(row)
+        buffer = (Record * len(records))(*records)
+        written = wintypes.DWORD()
+        if not kernel.WriteConsoleInputW(msvcrt.get_osfhandle(inp), buffer, len(records), ctypes.byref(written)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        assert written.value == len(records), '键盘事件未完整写入'
+        return written.value
+
+    environment = os.environ.copy()
+    for name in ('JAVA_TOOL_OPTIONS', '_JAVA_OPTIONS', 'JDK_JAVA_OPTIONS', 'YLC_CONSOLE_UNUSED', 'TERM'):
+        environment.pop(name, None)
+    # CMD 启动器本身会调整控制台模式；以同一启动器的无交互命令作为恢复基线。
+    subprocess.run([options.launcher, '--version'], cwd=options.workspace, env=environment,
+                   stdin=inp, stdout=out, stderr=out, check=True, timeout=10)
+    initial_modes = console_modes()
+    kernel.SetConsoleCP(options.codepage)
+    kernel.SetConsoleOutputCP(options.codepage)
+    # JVM 启动前的 Windows ACP 可能损坏中文 argv；cwd 仍保留真实中文路径。
+    command = [options.launcher, '--config', 'offline.yaml',
+               '--provider', 'openai-compatible', '--model', 'console-unicode-fixture',
+               '--base-url', options.base_url, '--api-key-env', 'YLC_CONSOLE_UNUSED', '--no-stream']
+    if options.interrupt_case == 'stream':
+        command.remove('--no-stream')
+    if options.interrupt_case:
+        command.append('--no-auto-review')
+    process = subprocess.Popen(command, cwd=options.workspace, env=environment, stdin=inp, stdout=out, stderr=out)
+    try:
+        # 键盘事件进入控制台输入缓冲区；即使 JVM 尚未进入 readLine 也不会丢失。
+        if options.interrupt_case:
+            wait_until(lambda: '›' in screen_text())
+            case = options.interrupt_case
+            written = send_keys('未提交的中文输入' if case == 'idle' else (SECOND if case == 'approval' else THIRD) + '\r')
+            if case in ('model', 'stream'):
+                wait_until(lambda: (Path(options.workspace) / 'model-ready').exists())
+                if case == 'stream':
+                    wait_until(lambda: '中断流式输出夹具' in screen_text())
+            elif case == 'approval':
+                wait_until(lambda: '[y/N]' in screen_text())
+            elif case == 'completed':
+                wait_until(lambda: '已完成中文任务。' in screen_text() and screen_text().count('›') >= 2)
+            interrupted_at = time.monotonic()
+            written += send_keys('\x03')
+        else:
+            time.sleep(.4)
+            prefix = ('/res\t', '/res\t1', '/hist\t', '/str\toff') if options.completion else ()
+            written = send_keys('\r'.join((*prefix, FIRST, SECOND, 'y', THIRD, '/exit')) + '\r')
+        code = process.wait(timeout=25)
         # UTF-16 代理对先重新组合，报告保持合法 Unicode。
-        screen = '\n'.join(lines).encode('utf-16-le', errors='surrogatepass').decode('utf-16-le', errors='replace')
+        screen = screen_text()
         evidence = {'initialCodepage': options.codepage, 'finalInputCodepage': kernel.GetConsoleCP(),
                     'finalOutputCodepage': kernel.GetConsoleOutputCP(), 'exitCode': code,
-                    'keyboardEventsWritten': written.value, 'screen': screen}
+                    'keyboardEventsWritten': written, 'screen': screen}
+        if options.interrupt_case:
+            evidence.update({'case': options.interrupt_case, 'exitLatencyMs': round((time.monotonic() - interrupted_at) * 1000),
+                             'initialConsoleModes': initial_modes, 'finalConsoleModes': console_modes()})
         Path(options.result).write_text(json.dumps(evidence, ensure_ascii=False, indent=2), encoding='utf-8')
     finally:
         if process.poll() is None:
-            process.kill()
+            # 启动器是 CMD；超时时一并清理其 Java 子进程，避免夹具占用临时工作区。
+            subprocess.run(['taskkill', '/PID', str(process.pid), '/T', '/F'],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
             process.wait()
         os.close(inp)
         os.close(out)
@@ -169,6 +237,9 @@ def console_child(options):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--child', action='store_true')
+    parser.add_argument('--completion', action='store_true', help='验证真实 Tab 补全、恢复后的历史回显和中文输入。')
+    parser.add_argument('--interrupt', action='store_true', help='验证 Ctrl+C 在输入、模型等待、流式输出和审批期间退出。')
+    parser.add_argument('--interrupt-case', choices=('idle', 'model', 'stream', 'approval', 'completed'))
     parser.add_argument('--launcher', type=Path, default=ROOT / 'ylc.cmd')
     parser.add_argument('--codepage', type=int, default=65001)
     parser.add_argument('--workspace')
@@ -191,14 +262,26 @@ def main():
     target = ROOT / 'target'
     target.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='console-input-', dir=target) as temporary:
-        for codepage in (936, 65001):
-            workspace = Path(temporary) / f'中文 workspace {codepage}'
+        cases = ('idle', 'model', 'stream', 'approval', 'completed') if options.interrupt else (None,)
+        for codepage, case in ((cp, case) for cp in (936, 65001) for case in cases):
+            workspace = Path(temporary) / f'中文 workspace {codepage} {case or "normal"}'
             (workspace / 'src').mkdir(parents=True)
             (workspace / 'src/中文.txt').write_text(FILE_TEXT, encoding='utf-8')
             (workspace / 'offline.yaml').write_text('{}\n', encoding='utf-8')
+            if options.completion:
+                session_dir = workspace / '.harness/sessions'
+                session_dir.mkdir(parents=True)
+                (session_dir / 'tab-history.json').write_text(json.dumps({
+                    'version': 1, 'id': 'tab-history', 'workspace': str(workspace.resolve()),
+                    'provider': 'openai-compatible', 'model': 'console-unicode-fixture',
+                    'status': 'COMPLETED', 'updatedAt': '2026-10-19T00:00:00Z',
+                    'transcript': [{'role': 'USER', 'content': '历史提问', 'toolCalls': [], 'providerMetadata': {}},
+                                   {'role': 'ASSISTANT', 'content': '历史回复：中文与 Unicode 😀', 'toolCalls': [], 'providerMetadata': {}}]
+                }, ensure_ascii=False), encoding='utf-8')
             output = workspace / 'console.json'
             with ThreadingHTTPServer(('127.0.0.1', 0), Provider) as server:
                 server.requests, server.errors = [], []
+                server.interrupt_case, server.workspace, server.release = case, workspace, threading.Event()
                 serving = threading.Thread(target=server.serve_forever, daemon=True)
                 serving.start()
                 try:
@@ -208,9 +291,14 @@ def main():
                     command = [sys.executable, str(Path(__file__).resolve()), '--child', '--launcher', str(options.launcher),
                                '--codepage', str(codepage), '--result', str(output), '--workspace', str(workspace),
                                '--base-url', f'http://127.0.0.1:{server.server_port}/v1']
+                    if options.completion:
+                        command.append('--completion')
+                    if case:
+                        command.extend(('--interrupt-case', case))
                     child = subprocess.run(command, creationflags=subprocess.CREATE_NEW_CONSOLE,
                                            startupinfo=startup, capture_output=True, timeout=35)
                 finally:
+                    server.release.set()
                     server.shutdown()
                     serving.join(5)
             evidence = json.loads(output.read_text(encoding='utf-8')) if output.exists() else {'probeError': child.stderr.decode('utf-8', errors='replace')}
@@ -222,14 +310,44 @@ def main():
                 saved_workspace = state['workspace']
                 saved_users = [row['content'] for row in state['transcript'] if row['role'] == 'USER']
             approved = (workspace / 'approved.txt').read_text(encoding='utf-8').splitlines() if (workspace / 'approved.txt').exists() else []
+            prefix_users = ['历史提问'] if options.completion else []
+            expected_users = [prefix_users + values for values in [[FIRST], [FIRST], [FIRST, SECOND], [FIRST, SECOND], [FIRST, SECOND, THIRD]]]
             evidence.update({'providerRequests': len(server.requests), 'wireUserMessages': user_rows,
                              'savedUserMessages': saved_users, 'providerErrors': server.errors,
                              'workspace': str(workspace), 'savedWorkspace': saved_workspace,
                              'approvedCommandLines': approved})
             evidence['passed'] = (child.returncode == 0 and evidence.get('exitCode') == 0 and not server.errors
-                                  and user_rows == [[FIRST], [FIRST], [FIRST, SECOND], [FIRST, SECOND], [FIRST, SECOND, THIRD]]
-                                  and saved_users == [FIRST, SECOND, THIRD] and approved == ['console-approved']
+                                  and user_rows == expected_users
+                                  and saved_users == prefix_users + [FIRST, SECOND, THIRD] and approved == ['console-approved']
                                   and saved_workspace is not None and Path(saved_workspace).resolve() == workspace.resolve())
+            if options.completion:
+                screen = evidence.get('screen', '')
+                evidence['passed'] = evidence['passed'] and all(marker in screen for marker in (
+                    '已恢复会话：tab-history', '历史回复：中文与 Unicode', '历史提问', '历史对话', '已关闭流式输出'))
+                evidence['tabCompletionAndHistory'] = True
+            if case:
+                expected_saved = [] if case == 'idle' else [SECOND if case == 'approval' else THIRD]
+                evidence['savedStatus'] = state['status'] if len(checkpoints) == 1 else None
+                evidence['passed'] = (child.returncode == 0 and evidence.get('exitCode') == 130 and not server.errors
+                                      and len(server.requests) == (0 if case == 'idle' else 1)
+                                      and saved_users == expected_saved and approved == []
+                                      and evidence['savedStatus'] == (None if case == 'idle' else 'COMPLETED' if case == 'completed' else 'CANCELLED')
+                                      and '已退出会话' in evidence.get('screen', '')
+                                      and evidence.get('exitLatencyMs', 25000) < 5000
+                                      and evidence.get('initialConsoleModes') == evidence.get('finalConsoleModes'))
+                if expected_saved and len(checkpoints) == 1:
+                    before_resume = checkpoints[0].read_bytes()
+                    environment = os.environ.copy()
+                    for name in ('JAVA_TOOL_OPTIONS', '_JAVA_OPTIONS', 'JDK_JAVA_OPTIONS', 'YLC_CONSOLE_UNUSED'):
+                        environment.pop(name, None)
+                    resumed = subprocess.run([str(options.launcher), '--config', 'offline.yaml', '--provider', 'openai-compatible',
+                                              '--base-url', f'http://127.0.0.1:{server.server_port}/v1',
+                                              '--api-key-env', 'YLC_CONSOLE_UNUSED', '--no-color', '--quiet'],
+                                             cwd=workspace, env=environment, input='/resume\n/resume 1\n/exit\n',
+                                             capture_output=True, encoding='utf-8', timeout=10)
+                    evidence['numericResumePassed'] = (resumed.returncode == 0 and '已恢复会话：' in resumed.stdout
+                                                       and before_resume == checkpoints[0].read_bytes())
+                    evidence['passed'] = evidence['passed'] and evidence['numericResumePassed']
             results.append(evidence)
     report = {'status': 'PASS' if all(row['passed'] for row in results) else 'FAIL', 'launcher': str(options.launcher),
               'windowsACP': ctypes.windll.kernel32.GetACP(),

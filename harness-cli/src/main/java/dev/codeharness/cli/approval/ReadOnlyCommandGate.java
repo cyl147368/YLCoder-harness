@@ -19,41 +19,54 @@ import java.util.Optional;
 import java.util.HexFormat;
 import java.util.ArrayList;
 
-/** 严格把目录与当前分支查询翻译为固定参数；从不执行用户提供的 shell 文本。 */
+/** 严格把目录、Git 分支及状态查询翻译为固定参数；从不执行用户提供的 shell 文本。 */
 final class ReadOnlyCommandGate {
     record FileIdentity(Path path, Object key, long size, FileTime modified) {}
     record Plan(Path workspace, String command, List<String> arguments, FileIdentity executable, Object workspaceKey,
-                Object repositoryKey) {
+                Object repositoryKey, String configuration) {
         Plan { arguments = List.copyOf(arguments); }
     }
+    record Check(Optional<Plan> plan, String reason) {
+        static Check rejected(String reason) { return new Check(Optional.empty(), reason); }
+    }
+    private record GitPlan(List<String> arguments, String configuration) {}
 
     Optional<Plan> plan(CommandApproval.Request request) {
+        return check(request).plan();
+    }
+
+    Check check(CommandApproval.Request request) {
+        Check outside = Check.rejected("此命令不在低风险自动审核范围内");
         try {
             String command = request.command();
             // 整个命令必须精确匹配；不做拆词、变量展开或危险片段删除。
             if (command.length() > 128 || command.codePoints().anyMatch(value -> Character.isISOControl(value)))
-                return Optional.empty();
+                return outside;
             Path workspace = request.workspace().toAbsolutePath().normalize();
             if (!workspace.equals(workspace.toRealPath()) || !Files.isDirectory(workspace, LinkOption.NOFOLLOW_LINKS))
-                return Optional.empty();
+                return outside;
             boolean git = command.startsWith("git ");
-            List<String> arguments = git ? gitArguments(workspace, command)
+            GitPlan gitPlan = git ? gitArguments(workspace, command) : null;
+            List<String> arguments = git ? gitPlan == null ? null : gitPlan.arguments()
                     : isWindows() ? windowsArguments(command) : unixArguments(command);
-            if (arguments == null) return Optional.empty();
+            if (arguments == null) return outside;
             Path executable = Path.of(arguments.getFirst()).toRealPath();
             if (executable.startsWith(workspace) || !Files.isRegularFile(executable, LinkOption.NOFOLLOW_LINKS))
-                return Optional.empty();
+                return outside;
             BasicFileAttributes binary = Files.readAttributes(executable, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
             BasicFileAttributes directory = Files.readAttributes(workspace, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
             // 执行的绝对路径也必须固定，不能在审核后经 PATH 再搜索。
             var canonicalArguments = new java.util.ArrayList<>(arguments);
             canonicalArguments.set(0, executable.toString());
-            return Optional.of(new Plan(workspace, command, canonicalArguments,
+            return new Check(Optional.of(new Plan(workspace, command, canonicalArguments,
                     new FileIdentity(executable, identity(executable, binary), binary.size(), binary.lastModifiedTime()),
                     identity(workspace, directory), git ? identity(workspace.resolve(".git"), Files.readAttributes(
-                            workspace.resolve(".git"), BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS)) : null));
+                            workspace.resolve(".git"), BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS)) : null,
+                    gitPlan == null ? "" : gitPlan.configuration())), "");
+        } catch (GitStatusConfig.Ineligible blocked) {
+            return Check.rejected(blocked.getMessage());
         } catch (IOException | RuntimeException | LinkageError ignored) {
-            return Optional.empty();
+            return outside;
         }
     }
 
@@ -114,10 +127,14 @@ final class ReadOnlyCommandGate {
         return arguments;
     }
 
-    private static List<String> gitArguments(Path workspace, String command) throws IOException {
+    private static GitPlan gitArguments(Path workspace, String command) throws IOException {
         List<String> operation = switch (command) {
-            // status/diff 即使只要统计也可能执行 clean/process filter，必须转人工。
             case "git branch --show-current" -> List.of("branch", "--show-current");
+            case "git status" -> List.of("status");
+            case "git status --short", "git status -s" -> List.of("status", "--short");
+            case "git status --porcelain", "git status --porcelain=v1" -> List.of("status", "--porcelain=v1");
+            case "git status --porcelain=v2" -> List.of("status", "--porcelain=v2");
+            case "git status -sb", "git status --short --branch", "git status --branch --short" -> List.of("status", "--short", "--branch");
             default -> null;
         };
         if (operation == null) return null;
@@ -137,13 +154,17 @@ final class ReadOnlyCommandGate {
         }
         Path git = installedGit(workspace);
         if (git == null) return null;
+        boolean status = operation.getFirst().equals("status");
+        String configuration = status ? GitStatusConfig.fingerprint(gitDirectory) : "";
         var arguments = new ArrayList<String>();
         arguments.add(git.toString());
         arguments.addAll(List.of("--no-pager", "--no-optional-locks", "--git-dir=" + gitDirectory,
                 "--work-tree=" + workspace, "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false",
                 "-c", "log.showSignature=false", "-c", "color.ui=false"));
         arguments.addAll(operation);
-        return arguments;
+        // 子模块有独立配置，不能让已审核的主仓库查询进入未经审核的子仓库。
+        if (status) arguments.add("--ignore-submodules=all");
+        return new GitPlan(arguments, configuration);
     }
 
     static Path installedGit(Path workspace) {

@@ -13,20 +13,40 @@ import java.util.Locale;
 interface TerminalInput {
     String readLine() throws IOException;
     boolean isTerminal();
+    default boolean editsLine() { return false; }
+    default String readCommand(String prompt, java.util.function.Supplier<java.util.List<String>> candidates) throws IOException {
+        return readLine();
+    }
+    default void closeEditor() throws IOException { }
+    /** 注册会话取消处理器；返回用于恢复原处理器的操作。 */
+    default Runnable onInterrupt(Runnable handler) { return () -> { }; }
 
     static TerminalInput system() {
         var console = System.console();
         if (console != null) {
+            TerminalInput editor = CompletingTerminalInput.open();
+            if (editor != null) return editor;
             // Windows 的窄字符输入在 UTF-8 代码页下会丢失中文，直接读取 UTF-16 控制台事件。
             if (System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("windows")) {
-                return lines(new BufferedReader(new WindowsConsoleReader()), true);
+                return withSignals(lines(new BufferedReader(new WindowsConsoleReader()), true));
             }
-            return new TerminalInput() {
+            return withSignals(new TerminalInput() {
                 public String readLine() { return console.readLine(); }
                 public boolean isTerminal() { return true; }
-            };
+            });
         }
         return utf8(System.in);
+    }
+
+    private static TerminalInput withSignals(TerminalInput input) {
+        return new TerminalInput() {
+            public String readLine() throws IOException { return input.readLine(); }
+            public boolean isTerminal() { return input.isTerminal(); }
+            public Runnable onInterrupt(Runnable handler) {
+                Object previous = org.jline.utils.Signals.register("INT", handler);
+                return () -> org.jline.utils.Signals.unregister("INT", previous);
+            }
+        };
     }
 
     static TerminalInput utf8(InputStream input) {

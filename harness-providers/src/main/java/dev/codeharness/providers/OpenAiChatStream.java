@@ -41,7 +41,17 @@ final class OpenAiChatStream {
             return false;
         }
         JsonNode chunk = parse(event);
-        if (!chunk.isObject() || chunk.hasNonNull("error") || !chunk.path("choices").isArray()) {
+        if (chunk.isObject() && chunk.hasNonNull("error")) {
+            // 网关错误正文可能含凭据或请求片段，只报告类型，不回显上游原文。
+            if (requestError(chunk.get("error"))) {
+                throw failure("厂商拒绝请求，请检查权限、额度、限流或请求配置");
+            }
+            throw ProviderException.streamFailure("Chat 流：厂商在流中返回错误，未收到完整回复");
+        }
+        if (chunk.isObject() && chunk.path("type").asText().startsWith("response.")) {
+            throw ProviderException.streamFailure("Chat 流：厂商返回了 Responses 事件，与 Chat Completions 协议不匹配");
+        }
+        if (!chunk.isObject() || !chunk.path("choices").isArray()) {
             throw failure("分块结构无效");
         }
         if (chunk.hasNonNull("usage")) {
@@ -169,6 +179,18 @@ final class OpenAiChatStream {
     }
 
     private static ProviderException failure(String message) { return new ProviderException("Chat 流：" + message); }
+
+    /** 明确的客户端错误不会因改成非流式而消失；不分析或回显自由文本错误正文。 */
+    private static boolean requestError(JsonNode error) {
+        var codes = java.util.Set.of("invalid_api_key", "authentication_error", "permission_error", "permission_denied",
+                "insufficient_quota", "rate_limit_exceeded", "rate_limit_error", "invalid_request_error",
+                "model_not_found", "context_length_exceeded", "content_policy_violation");
+        for (String field : java.util.List.of("code", "type", "status", "status_code")) {
+            String value = error.path(field).asText("").toLowerCase(java.util.Locale.ROOT);
+            if (codes.contains(value) || value.matches("4[0-9]{2}")) return true;
+        }
+        return false;
+    }
     private static final class Call {
         final StringBuilder id = new StringBuilder();
         final StringBuilder name = new StringBuilder();

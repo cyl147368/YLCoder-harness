@@ -9,6 +9,7 @@ import dev.codeharness.core.agent.*;
 import dev.codeharness.core.model.*;
 import dev.codeharness.providers.ProviderConfig;
 import dev.codeharness.providers.ProviderRegistry;
+import dev.codeharness.providers.ProviderException;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -57,7 +58,7 @@ public final class HarnessCli implements Callable<Integer> {
     @Option(names = "--model", scope = CommandLine.ScopeType.INHERIT, description = "厂商模型名称或 Azure 部署名称。") String model;
     @Option(names = "--base-url", scope = CommandLine.ScopeType.INHERIT, description = "自定义 API 基础 URL。") String baseUrl;
     @Option(names = "--api-key-env", scope = CommandLine.ScopeType.INHERIT, description = "保存 API 密钥的环境变量名称。") String apiKeyEnv;
-    @Option(names = "--max-iterations", scope = CommandLine.ScopeType.INHERIT, description = "每个任务最多调用模型的次数。") Integer maxIterations;
+    @Option(names = "--max-iterations", scope = CommandLine.ScopeType.INHERIT, description = "每个任务最多模型轮次；流式降级重试可额外请求一次。") Integer maxIterations;
     @Option(names = "--parallel-reads", scope = CommandLine.ScopeType.INHERIT, description = "安全读取操作的最大并发数，范围 1..8（默认：1）。") Integer parallelReads;
     @Option(names = "--no-stream", scope = CommandLine.ScopeType.INHERIT, description = "对不支持流式响应的网关使用普通非流式请求。") boolean noStream;
     @Option(names = "--context-budget", scope = CommandLine.ScopeType.INHERIT, description = "估算的上下文 token 预算。") Integer contextBudget;
@@ -74,6 +75,8 @@ public final class HarnessCli implements Callable<Integer> {
     private PrintWriter consoleOut;
     private PrintWriter consoleErr;
     private boolean interactiveMode;
+    private InteractiveInterrupt interactiveInterrupt;
+    private Boolean streamOverride;
     private CommandReview.Stats lastReviewStats = new CommandReview.Stats(0, 0, 0, 0, TokenUsage.ZERO, 0);
     private TokenUsage lastAgentUsage = TokenUsage.ZERO;
     private final UsageDashboard usageDashboard = new UsageDashboard();
@@ -140,14 +143,22 @@ public final class HarnessCli implements Callable<Integer> {
         boolean savedTask = false;
         List<SessionStore.Summary> listed = List.of();
         try (TerminalUi display = ui()) {
+            interactiveInterrupt = new InteractiveInterrupt(input());
             activate(runtime);
             display.welcome(runtime.workspace, runtime.config.provider, runtime.config.model, id);
             display.openBottom(input().isTerminal() && out() == consoleOut && err() == consoleErr
                     && !noColor && System.getenv("NO_COLOR") == null && !"dumb".equals(System.getenv("TERM")));
-            while (true) {
-                ui().prompt();
-                String line = input().readLine();
+            while (!interactiveInterrupt.requested()) {
+                ui().prompt(!input().editsLine());
+                List<SessionStore.Summary> completionSessions = listed;
+                String line;
+                try { line = input().readCommand("› ", () -> CommandCompletion.candidates(completionSessions)); }
+                catch (java.io.IOException failure) {
+                    if (interactiveInterrupt.requested()) break;
+                    throw failure;
+                }
                 ui().inputFinished(input().isTerminal());
+                if (interactiveInterrupt.requested()) break;
                 if (line == null || line.trim().equals("/exit")) break;
                 if (line.isBlank()) continue;
                 if (line.trim().equals("/help")) {
@@ -163,6 +174,20 @@ public final class HarnessCli implements Callable<Integer> {
                     continue;
                 }
                 String[] command = line.strip().split("\\s+", 2);
+                if (command[0].equals("/history")) {
+                    ui().history(history, command.length == 1 ? null : command[1]);
+                    continue;
+                }
+                if (command[0].equals("/stream")) {
+                    if (command.length == 1) {
+                        out().println("流式输出：" + (streamEnabled(current.runtime.config) ? "开启" : "关闭")
+                                + "。输入 /stream off 关闭，/stream on 开启；仅影响本次进程，不调用模型。");
+                    } else if (command[1].equals("off") || command[1].equals("on")) {
+                        streamOverride = command[1].equals("on");
+                        out().println("已" + (streamOverride ? "开启" : "关闭") + "流式输出，下次模型请求生效。此操作不调用模型。");
+                    } else out().println("用法：/stream、/stream off 或 /stream on。");
+                    continue;
+                }
                 if (command[0].equals("/resume")) {
                     if (command.length == 1) {
                         listed = List.of();
@@ -187,6 +212,7 @@ public final class HarnessCli implements Callable<Integer> {
                     }
                     if (target.equals(current.id)) {
                         out().println("已在此会话中，直接输入下一项任务即可。");
+                        ui().history(history, null);
                         continue;
                     }
                     InteractiveSession next;
@@ -202,7 +228,7 @@ public final class HarnessCli implements Callable<Integer> {
                     lastExitCode = 0;
                     activate(current.runtime);
                     usageDashboard.beginTask();
-                    ui().resumed(current.id, usageDashboard.process());
+                    ui().resumed(current.id, history, usageDashboard.process());
                     continue;
                 }
                 if (line.stripLeading().startsWith("/")) {
@@ -216,7 +242,21 @@ public final class HarnessCli implements Callable<Integer> {
                 history = new ArrayList<>(result.transcript());
                 printResult(current.id, result);
             }
-        } finally { current.close(); }
+            if (interactiveInterrupt.requested()) {
+                interactiveInterrupt.finish();
+                lastExitCode = 130;
+                out().println();
+                out().println(savedTask ? "  已退出会话。已保存的记录可用 /resume 查看并恢复。"
+                        : "  已退出会话；未提交的输入不会发送或保存。");
+                out().flush();
+            }
+        } finally {
+            if (interactiveInterrupt != null) interactiveInterrupt.finish();
+            try { current.close(); } finally {
+                try { if (interactiveInterrupt != null) interactiveInterrupt.close(); }
+                finally { input().closeEditor(); }
+            }
+        }
         return lastExitCode;
     }
 
@@ -280,7 +320,8 @@ public final class HarnessCli implements Callable<Integer> {
         InputTokenCounter inputCounter = TokenizerInputTokenCounter.create(config.agent.tokenCounter);
         AgentRunOptions options = new AgentRunOptions(PROMPT, config.agent.maxIterations,
                 config.agent.contextBudgetTokens, config.agent.maxOutputTokens,
-                config.agent.maxToolOutputChars, () -> Thread.currentThread().isInterrupted(), config.agent.parallelReads);
+                config.agent.maxToolOutputChars, () -> Thread.currentThread().isInterrupted()
+                        || interactiveInterrupt != null && interactiveInterrupt.requested(), config.agent.parallelReads);
         Map<String, String> headers = new LinkedHashMap<>();
         for (var header : config.headerEnv.entrySet()) {
             String value = System.getenv(header.getValue());
@@ -291,8 +332,41 @@ public final class HarnessCli implements Callable<Integer> {
         ProviderConfig providerConfig = new ProviderConfig(config.provider, config.model,
                 config.baseUrl == null || config.baseUrl.isBlank() ? null : URI.create(config.baseUrl),
                 key, Duration.ofSeconds(config.timeoutSeconds), headers);
-        ChatModel selectedModel = new ProviderRegistry().create(providerConfig);
-        ChatModel chatModel = usageDashboard.track(noStream ? selectedModel::complete : selectedModel);
+        // 逐次记录真实请求，包括失败的流和随后的一次兼容重试。
+        ChatModel selectedModel = usageDashboard.track(new ProviderRegistry().create(providerConfig));
+        ChatModel chatModel = new ChatModel() {
+            @Override public ChatResponse complete(ChatRequest request) { return selectedModel.complete(request); }
+            @Override public ChatResponse complete(ChatRequest request, java.util.function.Consumer<String> listener) {
+                if (!streamEnabled(config)) return selectedModel.complete(request);
+                var receivedText = new java.util.concurrent.atomic.AtomicBoolean();
+                try {
+                    return selectedModel.complete(request, delta -> {
+                        if (delta != null && !delta.isEmpty()) receivedText.set(true);
+                        if (listener != null) listener.accept(delta);
+                    });
+                }
+                catch (ProviderException failure) {
+                    if (cancelled()) throw failure;
+                    if (!failure.streamFallbackSuggested()) throw failure;
+                    streamOverride = false;
+                    if (!config.agent.streamFallback || receivedText.get()) {
+                        String reason = receivedText.get() ? "已输出部分回复，为避免重复输出，本次未自动重试"
+                                : "配置已关闭自动降级重试";
+                        throw new ProviderException(failure.getMessage() + "。" + reason
+                                + (interactiveMode ? "；本进程已关闭流式输出，可继续输入任务。"
+                                : "；请使用 --no-stream 恢复此会话。"));
+                    }
+                    if (!quiet && !json) ui().retryStream();
+                    if (cancelled()) throw failure;
+                    // 只重发这一轮的同一请求；没有递归或工具执行，因此不会重放已完成工具。
+                    try { return selectedModel.complete(request); }
+                    catch (ProviderException retryFailure) {
+                        if (cancelled()) throw retryFailure;
+                        throw new ProviderException("流式失败后已自动改用非流式重试 1 次，仍未成功：" + retryFailure.getMessage());
+                    }
+                }
+            }
+        };
         CommandReview reviewer = null;
         if (!allowCommands && !config.permissions.allowCommands && !noAutoReview && config.permissions.autoReview) {
             var reviewProvider = new ProviderConfig(providerConfig.providerId(), providerConfig.model(),
@@ -319,6 +393,14 @@ public final class HarnessCli implements Callable<Integer> {
         ui().connection(activeProvider, activeModel, providerHost);
     }
 
+    private boolean streamEnabled(HarnessConfig config) {
+        return streamOverride != null ? streamOverride : !noStream && config.agent.stream;
+    }
+
+    private boolean cancelled() {
+        return Thread.currentThread().isInterrupted() || interactiveInterrupt != null && interactiveInterrupt.requested();
+    }
+
     private CommandApproval.Decision approve(CommandApproval.Request request, HarnessConfig config, CommandReview reviewer) {
         if (allowCommands || config.permissions.allowCommands) return CommandApproval.Decision.shell();
         String reason = "";
@@ -340,11 +422,11 @@ public final class HarnessCli implements Callable<Integer> {
     private boolean confirm(String request, String prompt) {
         if (!input().isTerminal()) return false;
         err().println(confirmationText(request));
-        err().print(prompt);
+        if (!input().editsLine()) err().print(prompt);
         err().flush();
         if (interactiveMode) ui().phase("等待确认");
         String answer;
-        try { answer = input().readLine(); }
+        try { answer = input().readCommand(prompt, List::of); }
         catch (java.io.IOException failure) { throw new UncheckedIOException("无法读取权限审批回答", failure); }
         if (interactiveMode) {
             ui().beforeOutput();
@@ -398,6 +480,7 @@ public final class HarnessCli implements Callable<Integer> {
                 if (!quiet && !json) ui().tool(call);
             }
             @Override public void onToolResult(int iteration, ToolCall call, String value, boolean error) {
+                if (interactiveInterrupt != null && interactiveInterrupt.requested()) return;
                 if (!quiet && !json && error) ui().toolError(call.name());
                 live(iteration, error ? "处理工具错误" : "执行中");
             }
@@ -406,6 +489,11 @@ public final class HarnessCli implements Callable<Integer> {
                 catch (java.io.IOException failure) { throw new UncheckedIOException("无法保存会话检查点", failure); }
             }
         });
+        if (interactiveInterrupt != null && interactiveInterrupt.requested()) {
+            interactiveInterrupt.finish();
+            result = new AgentResult(AgentResult.Status.CANCELLED, result.finalAnswer(), "", result.iterations(),
+                    result.usage(), result.elapsed(), result.transcript());
+        }
         if (interactiveMode) ui().beforeOutput();
         streamingOutput.finishLine();
         runtime.store.save(id, runtime.config.provider, runtime.config.model, result.status().name(), result.transcript());

@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import shutil
 import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -19,7 +20,8 @@ def verify_review(launcher=None):
     records = []
     with tempfile.TemporaryDirectory(prefix='ylc review 中文 ') as temporary:
         base = Path(temporary)
-        for case in ('approved-cache', 'manual', 'malformed', 'http-error', 'disabled', 'high-risk', 'all-allowed'):
+        for case in ('approved-cache', 'manual', 'malformed', 'http-error', 'disabled', 'high-risk', 'all-allowed',
+                     'git-status-approved', 'git-status-manual', 'git-status-filter'):
             workspace = base / case
             workspace.mkdir()
             marker = workspace / 'marker.txt'
@@ -31,7 +33,19 @@ def verify_review(launcher=None):
             config.write_text('{}\n', encoding='utf-8')
             state = {'main': [], 'review': [], 'errors': []}
             command = 'echo AUTO_REVIEW_BLOCKED > blocked.txt' if case == 'high-risk' else SAFE_COMMAND
-            repeated = case == 'approved-cache'
+            repeated = case in ('approved-cache', 'git-status-approved')
+            if case.startswith('git-status-'):
+                command = 'git status --short'
+                git = shutil.which('git')
+                assert git, 'Git 状态审核验收需要已安装的 Git'
+                git_env = {k: v for k, v in os.environ.items() if not k.upper().startswith('GIT_')}
+                git_env.update({'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_CONFIG_SYSTEM': os.devnull})
+                subprocess.run([git, '-c', 'init.templateDir=', 'init', '--quiet'], cwd=workspace, env=git_env, check=True, capture_output=True)
+                subprocess.run([git, 'config', 'core.fsmonitor', 'echo blocked > blocked.txt'],
+                               cwd=workspace, env=git_env, check=True, capture_output=True)
+                if case == 'git-status-filter':
+                    subprocess.run([git, 'config', 'filter.fixture.clean', 'echo blocked > blocked.txt'],
+                                   cwd=workspace, env=git_env, check=True, capture_output=True)
 
             class Provider(BaseHTTPRequestHandler):
                 def log_message(self, *_):
@@ -58,7 +72,7 @@ def verify_review(launcher=None):
                                 self.end_headers()
                                 self.wfile.write(b'DO_NOT_LOG_REVIEW_SECRET')
                                 return
-                            text = '{"decision":"manual"}' if case == 'manual' else (
+                            text = '{"decision":"manual"}' if case in ('manual', 'git-status-manual') else (
                                 '{"decision":"approve"} trailing' if case == 'malformed' else '{"decision":"approve"}')
                             message = {'role': 'assistant', 'content': text}
                         elif len(state['main']) == 1:
@@ -70,7 +84,7 @@ def verify_review(launcher=None):
                             assert len(state['main']) == 2
                             outputs = [m['content'] for m in body['messages'] if m['role'] == 'tool']
                             assert len(outputs) == (2 if repeated else 1)
-                            approved = case in ('approved-cache', 'all-allowed')
+                            approved = case in ('approved-cache', 'all-allowed', 'git-status-approved')
                             assert all(('退出码：0' if approved else '未获批准') in output for output in outputs), outputs
                             if case == 'approved-cache' and os.name == 'nt':
                                 assert all('SHOULD_NOT_LIST_RECURSIVELY' not in output for output in outputs)
@@ -127,7 +141,7 @@ def verify_review(launcher=None):
             assert '[y/N]' not in run.stderr, '管道模式不能读取确认回答'
             assert not (workspace / 'blocked.txt').exists()
             assert marker.read_text(encoding='utf-8') == 'fixture\n'
-            expected_reviews = int(case in ('approved-cache', 'manual', 'malformed', 'http-error'))
+            expected_reviews = int(case in ('approved-cache', 'manual', 'malformed', 'http-error', 'git-status-approved', 'git-status-manual'))
             assert len(state['main']) == 2 and len(state['review']) == expected_reviews, (case, state)
             review = result['review']
             assert review['requests'] == expected_reviews

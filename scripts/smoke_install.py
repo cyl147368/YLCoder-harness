@@ -112,7 +112,9 @@ def verify_install(source):
         expected_jar = source / 'lib/ylc.jar'
         if not expected_jar.is_file():
             expected_jar = source / 'harness-cli/target/harness-cli-0.1.0-SNAPSHOT-all.jar'
-        assert hashlib.sha256((destination / 'lib/ylc.jar').read_bytes()).digest() == hashlib.sha256(expected_jar.read_bytes()).digest()
+        runtime_name = (destination / 'lib/current-runtime.txt').read_text(encoding='ascii').strip()
+        runtime = destination / 'lib' / runtime_name
+        assert hashlib.sha256(runtime.read_bytes()).digest() == hashlib.sha256(expected_jar.read_bytes()).digest()
         assert not (destination / 'config.local.yaml').exists()
         environment = os.environ.copy()
         environment['PATH'] = str(destination / 'bin') + os.pathsep + environment.get('PATH', '')
@@ -126,8 +128,10 @@ def verify_install(source):
                               f'base-url: http://127.0.0.1:{server.server_port}/v1\napi-key: {KEY}\n')
             config.write_text(fixture_config, encoding='utf-8')
             preserved = config.read_bytes()
+            runtime_mtime = runtime.stat().st_mtime_ns
             install(source, destination, config_dir, explicit)
             assert config.read_bytes() == preserved, '重复安装不得覆盖现有配置'
+            assert runtime.stat().st_mtime_ns == runtime_mtime, '相同运行包不得重写'
             for arguments in (['doctor'], ['--help'], ['--invalid-install-option']):
                 result = launch(invocation, environment, arguments)
                 assert result.returncode == (2 if arguments[0].startswith('--invalid') else 0), (result.stdout, result.stderr)

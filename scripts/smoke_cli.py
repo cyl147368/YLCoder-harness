@@ -1,4 +1,5 @@
 """使用确定性的本地厂商夹具运行打包 CLI，不使用凭据。"""
+import argparse
 import json
 import pathlib
 import subprocess
@@ -45,6 +46,9 @@ class Provider(BaseHTTPRequestHandler):
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--launcher', type=pathlib.Path, help='验证已安装的启动器')
+    args = parser.parse_args()
     assert JAR.is_file(), '打包冒烟测试前请运行 mvn verify'
     with ThreadingHTTPServer(('127.0.0.1', 0), Provider) as server:
         threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -56,7 +60,8 @@ def main():
                 source = workspace / 'Answer.java'
                 source.write_text('public class Answer { static int value() { return 41; } '
                                   'public static void main(String[] args) { System.out.println(value()); } }\n', encoding='utf-8')
-                common = ['java', '-jar', str(JAR), '--workspace', str(workspace), '--config', str(config),
+                launch = [str(args.launcher.resolve())] if args.launcher else ['java', '-jar', str(JAR)]
+                common = [*launch, '--workspace', str(workspace), '--config', str(config),
                           '--provider', 'openai-compatible', '--model', 'fake',
                           '--base-url', f'http://127.0.0.1:{server.server_port}/v1',
                           '--api-key-env', 'HARNESS_SMOKE_UNUSED_KEY', '--quiet', '--json', '--allow-commands']
@@ -76,7 +81,7 @@ def main():
                 assert json.loads(resumed.stdout)['session'] == result['session']
                 print(json.dumps({'status': 'PASS', 'modelRequests': len(requests),
                                   'workflow': 'search/read/edit_file/javac/java/changes/resume',
-                                  'jar': str(JAR)}, indent=2))
+                                  'runtime': str(args.launcher or JAR)}, indent=2))
         finally:
             server.shutdown()
 

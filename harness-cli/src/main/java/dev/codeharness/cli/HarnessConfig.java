@@ -20,6 +20,8 @@ public final class HarnessConfig {
     public Mcp mcp = new Mcp();
 
     public static final class Agent {
+        public boolean stream = true;
+        @JsonProperty("stream-fallback") public boolean streamFallback = true;
         @JsonProperty("max-iterations") public int maxIterations = 30;
         @JsonProperty("parallel-reads") public int parallelReads = 1;
         @JsonProperty("context-budget-tokens") public int contextBudgetTokens = 48_000;

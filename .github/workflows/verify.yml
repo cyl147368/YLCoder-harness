@@ -45,6 +45,8 @@ jobs:
         run: python scripts/smoke_streaming.py
       - name: 验证原生 Chat Completions 流式输出和工具完成
         run: python scripts/smoke_native_streaming.py
+      - name: 验证流式错误的一次非流式重试与真实请求记账
+        run: python scripts/smoke_stream_fallback.py
       - name: 验证配置的 MCP 工具与权限隔离
         run: python scripts/smoke_mcp.py
       - name: 验证低风险审核子 agent 与失败回退
@@ -83,12 +85,18 @@ jobs:
         run: python scripts/package_distribution.py
       - name: 验证解压后的便携启动器与离线工作流
         run: python scripts/smoke_distribution.py
+      - name: 验证安装更新不破坏运行中的文件编辑
+        run: python -X utf8 scripts/smoke_runtime_update.py --result target/runtime-update-smoke.json
       - name: 验证外部 ServiceLoader 厂商 SPI
         run: python scripts/smoke_custom_provider.py
       - name: 验证交互多任务检查点与恢复
         run: python scripts/smoke_interactive.py
       - name: 验证真实 Windows 控制台中文输入、工具与审批
         run: python scripts/smoke_console_input.py
+      - name: 验证 Tab 补全、恢复历史和中文输入
+        run: python scripts/smoke_console_input.py --completion --result target/windows-completion-history.json
+      - name: 验证 Ctrl+C 退出、取消检查点和终端恢复
+        run: python scripts/smoke_console_input.py --interrupt --result target/windows-ctrl-c.json
       - name: 测量合成上下文保留与分词
         run: java -cp harness-cli/target/harness-cli-0.1.0-SNAPSHOT-all.jar dev.codeharness.cli.bench.ContextBenchmark
       - name: 验证本地分词器上下文保留

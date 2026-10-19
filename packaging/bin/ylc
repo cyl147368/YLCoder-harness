@@ -2,8 +2,12 @@
 set -eu
 HARNESS_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 HARNESS_JAR="$HARNESS_DIR/lib/ylc.jar"
+if [ -f "$HARNESS_DIR/lib/current-runtime.txt" ]; then
+  IFS= read -r HARNESS_RUNTIME < "$HARNESS_DIR/lib/current-runtime.txt"
+  HARNESS_JAR="$HARNESS_DIR/lib/$HARNESS_RUNTIME"
+fi
 if [ ! -f "$HARNESS_JAR" ]; then
-  printf '%s\n' '缺少 lib/ylc.jar；请解压完整的发行包。' >&2
+  printf '%s\n' '缺少运行包；请重新安装或解压完整的发行包。' >&2
   exit 1
 fi
 if [ -n "${JAVA_HOME:-}" ]; then

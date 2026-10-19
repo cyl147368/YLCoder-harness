@@ -33,12 +33,23 @@ class InteractiveResumeTest {
     private Path config;
     private SessionStore store;
     private final List<JsonNode> requests = new CopyOnWriteArrayList<>();
+    private boolean failFirstStream;
 
     @BeforeEach void start() throws Exception {
         store = new SessionStore(workspace);
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/v1/chat/completions", exchange -> {
             requests.add(JSON.readTree(exchange.getRequestBody()));
+            if (failFirstStream && requests.size() == 1 && requests.getFirst().path("stream").asBoolean()) {
+                String events = "data: {\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\n"
+                        + "data: {\"error\":{\"message\":\"private-upstream-body\"}}\n\n";
+                byte[] bytes = events.getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().set("Content-Type", "text/event-stream");
+                exchange.sendResponseHeaders(200, bytes.length);
+                exchange.getResponseBody().write(bytes);
+                exchange.close();
+                return;
+            }
             byte[] response = JSON.writeValueAsBytes(Map.of("choices", List.of(Map.of(
                     "message", Map.of("role", "assistant", "content", "本地回复"), "finish_reason", "stop")),
                     "usage", Map.of("prompt_tokens", 11, "completion_tokens", 3)));
@@ -75,12 +86,28 @@ class InteractiveResumeTest {
         assertEquals(0, result.code, result.err);
         assertTrue(result.out.indexOf("saved-model") < result.out.indexOf("old-model"));
         assertTrue(result.out.contains("已恢复会话：latest"));
+        assertTrue(result.out.contains("历史对话"));
+        assertTrue(result.out.contains("已进入该会话"));
         assertTrue(result.out.contains("latest（已保存）"));
         assertTrue(result.out.contains("已在此会话中"));
         assertFalse(result.out.contains("\033"), "会话摘要不能注入终端控制字符");
         assertArrayEquals(before, Files.readAllBytes(checkpoint("latest")));
         assertTrue(requests.isEmpty(), "列出和切换均不能主动请求模型");
         try (var lease = store.lock("latest")) { assertTrue(lease.lock().isValid(), "退出必须释放恢复会话锁"); }
+    }
+
+    @Test void restoredConversationAndHistoryPagesRemainLocalAndContinuationUsesSameSession() throws Exception {
+        store.save("history", "openai-compatible", "saved-model", "COMPLETED", List.of(
+                ChatMessage.system("private-system"), ChatMessage.user("旧问题"), ChatMessage.assistant("旧回复\n第二行")));
+        Result result = run("/resume history\n/history\n/history all\n/history 999\n继续旧任务\n/exit\n");
+        assertEquals(0, result.code, result.err);
+        assertTrue(result.out.indexOf("已恢复会话：history") < result.out.indexOf("旧问题"));
+        assertTrue(result.out.contains("旧回复" + System.lineSeparator() + "    第二行"));
+        assertFalse(result.out.contains("private-system"));
+        assertTrue(result.out.contains("页码无效"));
+        assertEquals(1, requests.size());
+        assertTrue(requests.getFirst().path("messages").toString().contains("旧回复"));
+        assertEquals(List.of("旧问题", "继续旧任务"), users(store.load("history")));
     }
 
     @Test void switchingRestoresHistoryModelAndLocksWithoutMixingCurrentConversation() throws Exception {
@@ -163,6 +190,45 @@ class InteractiveResumeTest {
         assertThrows(IllegalArgumentException.class, () -> store.recent(51));
     }
 
+    @Test void resumedStreamErrorRetriesSameRequestOnceAndPreservesHistory() throws Exception {
+        save("saved", "saved-model", "原任务");
+        failFirstStream = true;
+        var lines = List.of("/resume saved", "hi", "hi again", "/exit").iterator();
+        TerminalInput input = new TerminalInput() {
+            private int reads;
+            public String readLine() {
+                if (++reads == 3) assertEquals(2, requests.size(), "无需重复输入任务即可完成一次非流式重试");
+                return lines.hasNext() ? lines.next() : null;
+            }
+            public boolean isTerminal() { return false; }
+        };
+        Result result = runStreaming(input);
+        assertEquals(0, result.code, result.err);
+        assertEquals(3, requests.size());
+        assertTrue(requests.getFirst().path("stream").asBoolean());
+        assertFalse(requests.getLast().path("stream").asBoolean());
+        assertEquals(requests.getFirst().path("messages"), requests.get(1).path("messages"));
+        assertFalse(result.err.contains("错误："));
+        assertFalse(result.err.contains("private-upstream-body"));
+        assertTrue(result.out.contains("本地回复"));
+        assertTrue(requests.getLast().path("messages").toString().contains("原任务"));
+        assertEquals(List.of("原任务", "hi", "hi again"), users(store.load("saved")));
+    }
+
+    @Test void interactiveStreamControlsAndConfigRequireNoModelCallUntilTask() throws Exception {
+        save("saved", "saved-model", "原任务");
+        Result result = runStreaming(input("/stream\n/stream bad\n/stream off\n/resume saved\n非流式任务\n/stream on\n流式任务\n/exit\n"));
+        assertEquals(0, result.code, result.err);
+        assertEquals(2, requests.size());
+        assertFalse(requests.getFirst().path("stream").asBoolean());
+        assertTrue(requests.getLast().path("stream").asBoolean());
+        assertTrue(result.out.contains("用法：/stream"));
+        Files.writeString(config, Files.readString(config) + "agent:\n  stream: false\n");
+        result = runStreaming(input("配置关闭流式\n/exit\n"));
+        assertEquals(0, result.code, result.err);
+        assertFalse(requests.getLast().path("stream").asBoolean());
+    }
+
     private void save(String id, String model, String task) throws Exception {
         store.save(id, "openai-compatible", model, "COMPLETED", List.of(ChatMessage.user(task)));
     }
@@ -175,11 +241,16 @@ class InteractiveResumeTest {
     }
     private Result run(String lines) { return run(input(lines)); }
     private Result run(TerminalInput input, String... extra) {
+        return runMode(input, false, extra);
+    }
+    private Result runStreaming(TerminalInput input) { return runMode(input, true); }
+    private Result runMode(TerminalInput input, boolean stream, String... extra) {
         var cli = new CommandLine(new HarnessCli(input));
         StringWriter out = new StringWriter(), err = new StringWriter();
         cli.setOut(new PrintWriter(out, true)).setErr(new PrintWriter(err, true));
         var args = new ArrayList<>(List.of("--workspace", workspace.toString(), "--config", config.toString(),
-                "--no-color", "--no-stream", "--quiet"));
+                "--no-color", "--quiet"));
+        if (!stream) args.add("--no-stream");
         args.addAll(List.of(extra));
         return new Result(cli.execute(args.toArray(String[]::new)), out.toString(), err.toString());
     }

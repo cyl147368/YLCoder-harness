@@ -11,6 +11,10 @@ timeout-seconds: 120
 header-env: {}
 
 agent:
+  # 不兼容流式的网关设为 false；交互中也可用 /stream off 临时关闭。
+  stream: true
+  # 兼容流式错误且尚无文本输出时，自动改用非流式重试一次；false 关闭自动重试。
+  stream-fallback: true
   max-iterations: 30
   parallel-reads: 1
   context-budget-tokens: 48000

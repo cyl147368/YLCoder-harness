@@ -78,13 +78,21 @@ final class TerminalUi implements AutoCloseable {
         currentTask = task;
         currentProcess = process;
         currentReview = review;
-        this.mainRequests = mainRequests;
+        this.mainRequests = Math.max(mainRequests, task.requests() - review.requests());
         this.tools = tools;
         this.activity = activity;
         refreshBottom();
     }
 
     synchronized void phase(String value) { activity = value; refreshBottom(); }
+
+    synchronized void retryStream() {
+        beforeOutput();
+        err.println("  ↻ 流式暂不可用，正在自动改用非流式重试（1/1）…");
+        err.flush();
+        mainRequests++;
+        phase("正在重试");
+    }
 
     private void refreshBottom() {
         if (bottom != null && bottom.active()) {
@@ -94,10 +102,12 @@ final class TerminalUi implements AutoCloseable {
         }
     }
 
-    synchronized void prompt() {
+    synchronized void prompt() { prompt(true); }
+
+    synchronized void prompt(boolean showPrompt) {
         refreshBottom();
         if (bottom == null || !bottom.active()) compact(out, "状态");
-        out.print(style("1;36", "› "));
+        if (showPrompt) out.print(style("1;36", "› "));
         out.flush();
     }
 
@@ -113,11 +123,15 @@ final class TerminalUi implements AutoCloseable {
         out.println("  /project  查看本地项目概览，不调用模型");
         out.println("  /status   查看连接、工作区、进程累计用量和完整会话 ID");
         out.println("  /resume   列出历史会话；/resume 序号或会话ID 切换后继续输入任务");
+        out.println("  /history  查看最近历史；/history 页码 翻页，/history all 查看全部");
+        out.println("  Tab       补全斜杠命令及参数；支持方向键编辑输入");
+        out.println("  /stream   查看流式状态；/stream off 关闭，/stream on 开启");
         out.println("  /help     显示帮助");
         out.println("  /exit     退出");
+        out.println("  Ctrl+C    中断当前任务并退出会话，保留已保存的记录");
         out.println();
         out.println("  示例：分析当前项目，先查看目录和 README，再说明启动方式。");
-        out.println("  请输入编程任务。任务会自动保存。输入 /exit 退出。");
+        out.println("  请输入编程任务。任务会自动保存。输入 /exit 或按 Ctrl+C 退出。");
         out.println(saved ? "  继续会话：ylc resume " + safe(session) : "  尚未保存任何任务。请先提交任务，再继续此会话。");
         out.println();
         out.flush();
@@ -154,18 +168,27 @@ final class TerminalUi implements AutoCloseable {
         out.flush();
     }
 
-    synchronized void resumed(String id, UsageDashboard.Snapshot process) {
+    synchronized void resumed(String id, java.util.List<dev.codeharness.core.model.ChatMessage> transcript,
+                              UsageDashboard.Snapshot process) {
         beforeOutput();
         answerStarted = progressStarted = false;
         taskStarted = 0;
         elapsedSeconds = 0;
         out.println();
         out.println("  已恢复会话：" + safe(id));
-        out.println("  对话已载入。直接输入下一项任务即可继续；尚未请求模型。");
+        out.println("  已进入该会话，下面显示历史对话；尚未请求模型。");
         out.println();
+        ConversationHistory.render(transcript, null, out::println);
         out.flush();
         live(UsageDashboard.Snapshot.empty("current-task"), process,
                 new CommandReview.Stats(0, 0, 0, 0, TokenUsage.ZERO, 0), 0, 0, "就绪");
+    }
+
+    void history(java.util.List<dev.codeharness.core.model.ChatMessage> transcript, String selection) {
+        beforeOutput();
+        out.println();
+        ConversationHistory.render(transcript, selection, out::println);
+        out.flush();
     }
 
     void status(Path workspace, String session, boolean saved, UsageDashboard.Snapshot process) {
