@@ -279,7 +279,10 @@ public final class HarnessCli implements Callable<Integer> {
         String answer;
         try { answer = input().readLine(); }
         catch (java.io.IOException failure) { throw new UncheckedIOException("无法读取权限审批回答", failure); }
-        if (interactiveMode) ui().phase("执行中");
+        if (interactiveMode) {
+            ui().beforeOutput();
+            ui().phase("执行中");
+        }
         return answer != null && (answer.equalsIgnoreCase("y") || answer.equalsIgnoreCase("yes"));
     }
 
@@ -335,6 +338,7 @@ public final class HarnessCli implements Callable<Integer> {
                 catch (java.io.IOException failure) { throw new UncheckedIOException("无法保存会话检查点", failure); }
             }
         });
+        if (interactiveMode) ui().beforeOutput();
         streamingOutput.finishLine();
         runtime.store.save(id, runtime.config.provider, runtime.config.model, result.status().name(), result.transcript());
         lastAgentUsage = result.usage();
@@ -370,8 +374,14 @@ public final class HarnessCli implements Callable<Integer> {
     private static int exitCode(AgentResult result) {
         return switch (result.status()) { case COMPLETED -> 0; case CANCELLED -> 130; case MAX_ITERATIONS -> 3; case FAILED -> 1; };
     }
-    private PrintWriter out() { return spec.commandLine().getOut(); }
-    private PrintWriter err() { return spec.commandLine().getErr(); }
+    private PrintWriter out() {
+        if (interactiveMode && terminalUi != null) terminalUi.beforeOutput();
+        return spec.commandLine().getOut();
+    }
+    private PrintWriter err() {
+        if (interactiveMode && terminalUi != null) terminalUi.beforeOutput();
+        return spec.commandLine().getErr();
+    }
     /** 显式命令行变量覆盖本地密钥；未显式选择变量时，优先使用非空白的配置密钥。 */
     static String resolveApiKey(HarnessConfig config, String explicitEnvironment,
                                 java.util.function.Function<String, String> environment) {

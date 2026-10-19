@@ -17,11 +17,13 @@ class BottomStatusBarTest {
             assertTrue(bar.active());
             bar.update(List.of("模型 fixture", "输入 200 / 输出 10 / 缓存 100", "状态：等待输入"));
             String emitted = sink.toString();
-            assertTrue(emitted.contains("\033[1;20r\033[10;7H"), "分隔行与三行状态共同占用四行视窗");
+            assertTrue(emitted.startsWith("\033[10;7H"), "重绘应从当前正文光标出发");
+            assertFalse(Pattern.compile("\\x1b\\[[0-9;]*r").matcher(emitted).find(),
+                    "不能设置局部滚动区域，否则向上滚出的正文无法进入终端历史");
             assertTrue(emitted.contains("\033[22;1H\033[2K模型 fixture"));
             assertTrue(emitted.endsWith("\0338"), "重绘后返回正文光标");
         }
-        assertTrue(sink.toString().endsWith("\0337\033[r\0338"), "退出恢复滚动区后也要恢复当时的真实光标");
+        assertTrue(sink.toString().endsWith("\0338"), "关闭不移动用户正在查看的视窗");
         assertEquals(1, surface.restores);
     }
 
@@ -30,7 +32,7 @@ class BottomStatusBarTest {
         var surface = new FakeSurface(new BottomStatusBar.Screen(80, 24, 4, 24, 0));
         var bar = new BottomStatusBar(new PrintWriter(sink), surface);
         bar.update(List.of("a", "b", "c"));
-        assertTrue(sink.toString().startsWith("\033[24;1H\n\n\n\n\033[1;20r\033[20;4H"));
+        assertTrue(sink.toString().startsWith("\033[24;1H\n\n\n\n\033[20;4H"));
         bar.close();
         bar.close();
         assertEquals(1, surface.restores, "关闭必须幂等");
@@ -44,7 +46,7 @@ class BottomStatusBarTest {
             sink.getBuffer().setLength(0);
             surface.screen = new BottomStatusBar.Screen(90, 30, 2, 8, 100);
             bar.update(List.of("new", "line"));
-            assertTrue(sink.toString().contains("\033[1;27r\033[8;2H"));
+            assertTrue(sink.toString().startsWith("\033[8;2H"));
             assertTrue(sink.toString().contains("\033[29;1H\033[2Knew"));
             assertEquals(Set.of(28, 29, 30), erasedRows(sink.toString()),
                     "resize 后旧状态的绝对行也可能属于新正文，只能绘制新预留区");
@@ -75,7 +77,7 @@ class BottomStatusBarTest {
         surface.screen = new BottomStatusBar.Screen(90, 18, 2, 8, 108);
         bar.close();
         assertEquals(Set.of(), erasedRows(sink.toString()), "关闭不能按过期坐标清除正文");
-        assertEquals("\0337\033[r\0338", sink.toString());
+        assertEquals("", sink.toString());
         assertEquals(1, surface.restores);
     }
 
@@ -89,7 +91,7 @@ class BottomStatusBarTest {
             surface.screen = new BottomStatusBar.Screen(80, 24, 9, 24, 276);
             bar.update(List.of("new model", "new usage", "new cache", "new phase"));
             String emitted = sink.toString();
-            String reserve = "\033[r\033[24;1H\n\n\n\n\n\033[1;19r\033[19;9H";
+            String reserve = "\033[24;1H\n\n\n\n\n\033[19;9H";
             assertTrue(emitted.startsWith(reserve), "即使几何不变，也必须先为分隔行及四行状态腾出空间");
             assertEquals(Set.of(20, 21, 22, 23, 24), erasedRows(emitted));
             assertTrue(emitted.indexOf("\033[20;1H\033[2K") > emitted.indexOf(reserve),
@@ -103,7 +105,7 @@ class BottomStatusBarTest {
         try (var bar = new BottomStatusBar(new PrintWriter(sink), surface)) {
             bar.update(List.of("model", "usage", "cache", "phase", "must not consume a sixth row"));
             String emitted = sink.toString();
-            assertTrue(emitted.startsWith("\033[1;6r\033[2;1H"), "五行底栏仍为正文保留至少六行");
+            assertTrue(emitted.startsWith("\033[2;1H"), "绘制底栏时保持当前正文光标位置");
             assertEquals(Set.of(7, 8, 9, 10, 11), erasedRows(emitted));
             var separator = Pattern.compile("\\x1b\\[7;1H\\x1b\\[2K([^\\x1b]*)").matcher(emitted);
             assertTrue(separator.find());
@@ -130,7 +132,7 @@ class BottomStatusBarTest {
             bar.update(List.of("model", "usage", "cache", "phase"));
             assertFalse(bar.active());
             assertEquals(Set.of(), erasedRows(sink.toString()));
-            assertEquals("\0337\033[r\0338", sink.toString());
+            assertEquals("", sink.toString());
         }
         assertEquals(1, surface.restores);
     }
@@ -153,6 +155,49 @@ class BottomStatusBarTest {
             assertFalse(bar.active());
         }
         assertEquals(1, failing.restores);
+    }
+
+    @Test void scrollingThroughHistorySuspendsPaintingWithoutDisablingFooter() {
+        var sink = new StringWriter();
+        var surface = new FakeSurface(new BottomStatusBar.Screen(80, 24, 2, 19, 100));
+        try (var bar = new BottomStatusBar(new PrintWriter(sink), surface)) {
+            bar.update(List.of("model", "usage", "cache", "phase"));
+            sink.getBuffer().setLength(0);
+            surface.screen = new BottomStatusBar.Screen(80, 24, 2, 22, 97);
+            bar.beforeOutput();
+            bar.update(List.of("new model", "new usage", "new cache", "new phase"));
+            assertEquals("", sink.toString(), "只上滚三行、输入光标仍可见时也不能强行回到底部");
+            surface.screen = new BottomStatusBar.Screen(80, 24, 2, 49, 70);
+            bar.beforeOutput();
+            bar.update(List.of("new model", "new usage", "new cache", "new phase"));
+            assertEquals("", sink.toString(), "翻阅历史时不能写光标控制序列或覆盖旧正文");
+            assertTrue(bar.active(), "翻阅历史只是暂缓绘制，不能永久禁用状态栏");
+            assertEquals(0, surface.restores);
+            surface.screen = new BottomStatusBar.Screen(80, 24, 2, 19, 100);
+            bar.update(List.of("latest model", "usage", "cache", "phase"));
+            assertTrue(sink.toString().contains("latest model"), "回到底部后的下一次更新应恢复状态");
+            sink.getBuffer().setLength(0);
+            surface.screen = new BottomStatusBar.Screen(80, 24, 2, 49, 70);
+        }
+        assertEquals("", sink.toString(), "在历史视窗退出也不能强行回到底部");
+        assertEquals(1, surface.restores);
+    }
+
+    @Test void outputClearsOnlyFooterSuffixAfterEchoedInputAndOnlyOnce() {
+        var sink = new StringWriter();
+        var surface = new FakeSurface(new BottomStatusBar.Screen(80, 24, 2, 19, 100));
+        try (var bar = new BottomStatusBar(new PrintWriter(sink), surface)) {
+            bar.update(List.of("model", "usage", "cache", "phase"));
+            sink.getBuffer().setLength(0);
+            // 多行输入回显已写入第20行和第21行前10列，不允许清除这些用户文字。
+            surface.screen = new BottomStatusBar.Screen(80, 24, 11, 21, 100);
+            bar.beforeOutput();
+            String cleared = sink.toString();
+            assertEquals("\0337\033[21;11H\033[0K\033[22;1H\033[0K\033[23;1H\033[0K\033[24;1H\033[0K\0338", cleared);
+            assertFalse(cleared.contains("20;"));
+            bar.beforeOutput();
+            assertEquals(cleared, sink.toString(), "底栏已清除时不能再次擦除即将输出的正文");
+        }
     }
 
     @Test void disabledFactoryDoesNotEmitAnyTerminalControl() {

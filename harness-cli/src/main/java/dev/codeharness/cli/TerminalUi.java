@@ -64,6 +64,14 @@ final class TerminalUi implements AutoCloseable {
 
     void openBottom(boolean allowed) { bottom = BottomStatusBar.open(err, allowed); }
 
+    synchronized void beforeOutput() {
+        if (bottom != null && bottom.active()) {
+            out.flush();
+            err.flush();
+            bottom.beforeOutput();
+        }
+    }
+
     synchronized void live(UsageDashboard.Snapshot task, UsageDashboard.Snapshot process,
                            CommandReview.Stats review, int mainRequests, int tools, String activity) {
         currentTask = task;
@@ -94,10 +102,12 @@ final class TerminalUi implements AutoCloseable {
 
     /** 管道输入没有终端回显，需要主动结束提示符所在行。 */
     void inputFinished(boolean terminal) {
+        beforeOutput();
         if (!terminal) { out.println(); out.flush(); }
     }
 
     void help(boolean saved, String session) {
+        beforeOutput();
         section(out, "帮助");
         out.println("  /project  查看本地项目概览，不调用模型");
         out.println("  /status   查看连接、工作区、进程累计用量和完整会话 ID");
@@ -112,6 +122,7 @@ final class TerminalUi implements AutoCloseable {
     }
 
     void status(Path workspace, String session, boolean saved, UsageDashboard.Snapshot process) {
+        beforeOutput();
         section(out, "连接与工作区");
         identity(out);
         out.println();
@@ -144,6 +155,7 @@ final class TerminalUi implements AutoCloseable {
     }
 
     private void progress() {
+        beforeOutput();
         if (!progressStarted) {
             err.println();
         }
@@ -200,12 +212,14 @@ final class TerminalUi implements AutoCloseable {
 
     synchronized void toolError(String name) {
         if (!showProgress) return;
+        beforeOutput();
         err.println("    " + style("33", "工具未完成：" + safe(name) + "；正在把错误交给模型处理。"));
         err.flush();
         refreshBottom();
     }
 
     synchronized void answer() {
+        beforeOutput();
         if (answerStarted) return;
         if (progressStarted) {
             err.printf("  %s %s%n", style("32", "✓"), style("32", activity + " · " + step + " 次" + (tools == 0 ? "" : "工具") + " · "
@@ -217,7 +231,6 @@ final class TerminalUi implements AutoCloseable {
         out.flush();
         answerStarted = true;
         progressStarted = false;
-        refreshBottom();
     }
 
     void summary(String session, AgentResult result, int toolCount, boolean interactive,
@@ -232,6 +245,7 @@ final class TerminalUi implements AutoCloseable {
         taskStarted = 0;
         live(task, process, review, Math.max(0, task.requests() - review.requests()), toolCount, status);
         if (interactive) {
+            beforeOutput();
             out.println();
             String input = compactAmount(task.total().inputTokens(), task.inputReportedRequests(), task.requests());
             String output = compactAmount(task.total().outputTokens(), task.outputReportedRequests(), task.requests());

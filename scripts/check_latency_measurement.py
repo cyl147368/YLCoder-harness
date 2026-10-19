@@ -34,6 +34,9 @@ def check_usage_summaries():
                   (compact.replace('输入 token 12', '输入 token 1,234').replace('输出 token 3', '输出 token 56,789'), 58023),
                   (compact.replace('缓存 token 6', '缓存 token —（未报告）')
                           .replace('50.0%', '—（缓存用量未报告）'), 15)]
+    plain = compact.replace('── 状态 · 已回复 ──', '已回复')
+    positives += [(plain + ending, 15) for ending in ('', '\n', '\r\n')]
+    positives += [(plain.replace('输入 token 12', '输入 token 0').replace('输出 token 3', '输出 token 0'), 0)]
     for text, expected in positives:
         assert parse_cli_usage_summary(text.encode('utf-8')) == expected, text
     negatives = [
@@ -65,6 +68,10 @@ def check_usage_summaries():
         compact.replace('  已回复 · 1次主模型', '  未完成 · 1次主模型'),
         compact + ' extra',
     ]
+    negatives += [plain + '\n' + compact, plain + '\n' + plain, plain + '\n' + english,
+                  plain.replace('输入 token 12', '输入 token — 未报告'),
+                  plain.replace('输出 token 3', '输出 token 3（部分）'),
+                  plain.replace('  已回复 · 1次主模型', '  未完成 · 1次主模型')]
     for text in negatives:
         assert parse_cli_usage_summary(text.encode('utf-8')) is None, text
     return {'positive': len(positives), 'negative': len(negatives), 'languages': ['en', 'zh'],

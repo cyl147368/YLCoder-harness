@@ -55,6 +55,8 @@ jobs:
         run: python scripts/smoke_bottom_status.py
       - name: 验证流式中途暂停时的固定底栏
         run: python scripts/smoke_bottom_status.py --streaming --result target/bottom-status-console-streaming.json
+      - name: 验证逐行输出的完整滚动历史和回到最新内容
+        run: python scripts/smoke_bottom_status.py --streaming --scrollback --answer-lines 72 --result target/bottom-status-scrollback.json
       - name: 验证打包 CLI 的分词预算
         run: python scripts/smoke_token_budget.py
       - name: 验证打包 CLI 持久化厂商消息回放

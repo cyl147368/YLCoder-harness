@@ -40,15 +40,21 @@ def parse_cli_usage_summary(stderr):
         r'^会话：[A-Za-z0-9_-]+ \| [A-Z_]+ \| 1 次调用 \| ([0-9]+) tokens \| [0-9]+ ms\r?$',
     )
     legacy = [match for pattern in patterns for match in re.finditer(pattern, text, re.MULTILINE)]
-    compact = list(re.finditer(
-        r'^  ── 状态 · (?P<activity>已回复|本轮完成|达到调用上限|已取消|未完成) ──\r?\n'
+    activities = r'已回复|完成|本轮完成|达到调用上限|已取消|未完成'
+    headers_patterns = (
+        rf'^  ── 状态 · (?P<activity>{activities}) ──\r?\n',
+        rf'^  (?P<activity>{activities})\r?\n',
+    )
+    body = (
         r'  模型 [^\r\n]+ · 厂商 [^\r\n]+\r?\n'
         r'  本轮  输入 token (?P<input>[^\r\n]+) · 输出 token (?P<output>[^\r\n]+)\r?\n'
         r'  缓存 token [^\r\n]+ · 缓存命中率 [^\r\n]+\r?\n'
         r'  (?P=activity) · (?P<main>[0-9]+)次主模型/(?P<review>[0-9]+)次审核 · '
         r'(?P<tools>未调用工具|[0-9]+次工具) · [0-9]+\.[0-9] 秒'
-        r'(?: · 审核复用[0-9]+/人工[0-9]+)?\r?$', text, re.MULTILINE))
-    headers = len(re.findall(r'^  ── 状态 · ', text, re.MULTILINE))
+        r'(?: · 审核复用[0-9]+/人工[0-9]+)?\r?$')
+    compact = [match for header in headers_patterns
+               for match in re.finditer(header + body, text, re.MULTILINE)]
+    headers = len(re.findall(rf'^  (?:── 状态 · |(?:{activities})\r?$)', text, re.MULTILINE))
     if headers:
         # 不从多个任务、部分状态或混合版本的输出中挑选一个看似完整的汇总。
         if headers != 1 or len(compact) != 1 or legacy:

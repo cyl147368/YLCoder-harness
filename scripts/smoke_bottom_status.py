@@ -104,7 +104,9 @@ class Provider(BaseHTTPRequestHandler):
 
                 event({'choices': [{'index': 0, 'delta': {'role': 'assistant'}}]})
                 first_chunk = text.rsplit(FIRST_END, 1)[0] + STREAM_CHUNK_END
-                event({'choices': [{'index': 0, 'delta': {'content': first_chunk}}]})
+                chunks = first_chunk.splitlines(keepends=True) if self.server.scrollback else [first_chunk]
+                for chunk in chunks:
+                    event({'choices': [{'index': 0, 'delta': {'content': chunk}}]})
                 (self.server.workspace / 'stream-chunk.ready').touch()
                 deadline = time.monotonic() + 25
                 while not (self.server.workspace / 'stream-chunk.release').exists():
@@ -291,6 +293,7 @@ def console_child(options):
     evidence = {'scope': '真实 Windows 控制台；120x30 视口和 300 行滚动缓冲区；localhost 夹具',
                 'longAnswerLines': options.answer_lines,
                 'streaming': options.streaming,
+                'scrollback': options.scrollback,
                 'snapshots': {}}
 
     def persist_snapshot(label):
@@ -307,15 +310,37 @@ def console_child(options):
 
     def assert_second_progress_retained(screen):
         body = second_task_body(screen)
-        assert SECOND in body, ('正文被清除：第二任务输入缺失', body)
         assert re.search(r'● 正在思考', body), ('正文被清除：第二任务思考进度缺失', body)
         assert re.search(r'● 执行命令', body), ('正文被清除：第二任务工具进度缺失', body)
         assert COMMAND in body, ('正文被清除：完整审批命令缺失', body)
         assert '允许执行命令吗？[y/N]' in body, ('正文被清除：完整审批提示缺失', body)
         return body
 
+    def assert_history_is_scrollable(screen):
+        # 分块输出总量小于缓冲区容量，全部正文都应存在，而不是仅保留最后一屏。
+        assert options.answer_lines < SCROLLBACK - HEIGHT * 2
+        history = screen['bufferText'].splitlines()
+        for number in range(1, options.answer_lines + 1):
+            marker = f'长回答第 {number:03d} 行'
+            assert screen['bufferText'].count(marker) == 1, ('历史正文丢失或重复', marker, screen)
+        first_row = next(index for index, line in enumerate(history) if '长回答第 001 行' in line)
+        assert first_row + HEIGHT < screen['cursorY'], '验收必须向上翻超过一屏'
+        # 直接操作滚轮最终改变的 Win32 视窗位置；不伪造键盘、不消耗输入事件。
+        earlier = Rect(0, first_row, WIDTH - 1, first_row + HEIGHT - 1)
+        checked(kernel.SetConsoleWindowInfo(output_handle, True, ctypes.byref(earlier)))
+        scrolled = persist_snapshot('historyScrolledUp')
+        assert '长回答第 001 行' in scrolled['screen'], scrolled
+        assert scrolled['cursorY'] == screen['cursorY'], '翻阅历史不能移动正在输入的光标'
+        assert scrolled['viewportTop'] == first_row, '视窗必须停留在历史位置'
+        latest = Rect(0, screen['viewportTop'], WIDTH - 1, screen['viewportBottom'])
+        checked(kernel.SetConsoleWindowInfo(output_handle, True, ctypes.byref(latest)))
+        returned = persist_snapshot('historyReturnedToLatest')
+        assert has_footer(returned), '回到底部后关键状态仍须可见'
+        assert returned['cursorY'] == screen['cursorY']
+        evidence['historyLinesVerified'] = options.answer_lines
+
     try:
-        await_screen(lambda row: has_footer(row) and 'ylc>' in row['body'], '初始底栏')
+        await_screen(lambda row: has_footer(row) and '›' in row['body'].splitlines(), '初始底栏')
         initial = persist_snapshot('initial')
         assert '尚无请求' in initial['footer'], initial
         assert initial['body'].splitlines()[-1].strip() == '─' * (initial['viewportWidth'] - 3), initial
@@ -337,6 +362,8 @@ def console_child(options):
             for number in range(max(1, options.answer_lines - 5), options.answer_lines + 1):
                 assert f'长回答第 {number:03d} 行' in middle['body'], (
                     '正文被底栏覆盖：流式中途末尾行缺失', number, middle)
+            if options.scrollback:
+                assert_history_is_scrollable(middle)
             (workspace / 'stream-chunk.release').touch()
         await_screen(lambda row: FIRST_END in row['body'] and has_footer(row)
                      and '120' in row['footer'] and '60' in row['footer'], '长回答后的固定底栏')
@@ -353,10 +380,12 @@ def console_child(options):
             assert_second_progress_retained(approval)
             type_line('y')
             await_screen(lambda row: SECOND_END in row['body'] and has_footer(row)
-                         and '› ' in row['body'], '第二个任务完成后的底栏')
+                         and '›' in row['body'].splitlines(), '第二个任务完成后的底栏')
             completed = persist_snapshot('secondTask')
             second_body = assert_second_progress_retained(completed)
             assert SECOND_END in second_body, ('正文被清除：第二任务回复内容缺失', second_body)
+            assert SECOND_END in second_body.splitlines(), '短回复尾部不能残留旧底栏文字'
+            assert '  ' + COMMAND in second_body.splitlines(), '审批命令尾部不能混入底栏字段'
         type_line('/exit')
         evidence['exitCode'] = process.wait(timeout=10)
         assert evidence['exitCode'] == 0, evidence
@@ -382,7 +411,7 @@ def console_child(options):
         os.close(out)
 
 
-def verify_bottom_status(launcher=None, result_path=None, answer_lines=ANSWER_LINES, streaming=False):
+def verify_bottom_status(launcher=None, result_path=None, answer_lines=ANSWER_LINES, streaming=False, scrollback=False):
     if os.name != 'nt':
         return {'status': 'SKIP', 'reason': '固定底栏的真实控制台验收仅适用于 Windows'}
     launcher = Path(launcher or ROOT / 'ylc.cmd').resolve()
@@ -400,6 +429,7 @@ def verify_bottom_status(launcher=None, result_path=None, answer_lines=ANSWER_LI
             server.requests, server.errors, server.workspace = [], [], workspace
             server.answer_lines = answer_lines
             server.streaming = streaming
+            server.scrollback = scrollback
             serving = threading.Thread(target=server.serve_forever, daemon=True)
             serving.start()
             startup = subprocess.STARTUPINFO()
@@ -410,6 +440,8 @@ def verify_bottom_status(launcher=None, result_path=None, answer_lines=ANSWER_LI
                        '--result', str(output), '--answer-lines', str(answer_lines)]
             if streaming:
                 command.append('--streaming')
+            if scrollback:
+                command.append('--scrollback')
             try:
                 child = subprocess.run(command, creationflags=subprocess.CREATE_NEW_CONSOLE,
                                        startupinfo=startup, capture_output=True, timeout=70)
@@ -462,6 +494,8 @@ def main():
                         help='首轮回答行数；默认 400，覆盖 300 行控制台缓冲区饱和。')
     parser.add_argument('--streaming', action='store_true',
                         help='使用分两段并暂停的 localhost SSE；只执行首轮任务与退出恢复。')
+    parser.add_argument('--scrollback', action='store_true',
+                        help='逐行流式输出并验证完整历史、向上翻阅和返回；搭配 --streaming --answer-lines 72。')
     parser.add_argument('--child', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--workspace', help=argparse.SUPPRESS)
     parser.add_argument('--base-url', help=argparse.SUPPRESS)
@@ -476,7 +510,9 @@ def main():
             raise
         return
     assert options.answer_lines >= 6, '长回答夹具至少需要六行'
-    result = verify_bottom_status(options.launcher, options.result, options.answer_lines, options.streaming)
+    if options.scrollback:
+        assert options.streaming and HEIGHT * 2 < options.answer_lines < SCROLLBACK - HEIGHT * 2
+    result = verify_bottom_status(options.launcher, options.result, options.answer_lines, options.streaming, options.scrollback)
     write_json(options.result, result)
     print(json.dumps({'status': result['status'], 'localhostRequests': result.get('localhostRequests', 0),
                       'result': str(options.result)}, ensure_ascii=True))

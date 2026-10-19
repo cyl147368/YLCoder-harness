@@ -9,7 +9,7 @@ import java.io.PrintWriter;
 import java.util.List;
 import java.util.Locale;
 
-/** 在确认共享 Windows 控制台后预留底部状态区；不读取输入，也不使用备用屏幕。 */
+/** 在共享 Windows 控制台底部绘制状态；保留全屏原生滚动与历史缓冲区，不接管鼠标输入。 */
 final class BottomStatusBar implements AutoCloseable {
     private static final String ESC = "\033[";
     private static final int MAX_ROWS = 5;
@@ -20,6 +20,7 @@ final class BottomStatusBar implements AutoCloseable {
     private Thread shutdownHook;
     private Screen lastScreen;
     private int footerRows;
+    private boolean painted;
 
     static BottomStatusBar open(PrintWriter writer, boolean allowed) {
         if (!allowed || !System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("windows"))
@@ -68,13 +69,16 @@ final class BottomStatusBar implements AutoCloseable {
         if (!active()) return;
         try {
             Screen screen = surface.screen();
+            // 向上翻阅时光标会落在可见视窗之外。此时不能用光标控制强行跳回底部，
+            // 也不能把历史视窗当作失效终端去清理；返回实时视图后可在下次更新重绘。
+            if (browsingHistory(screen)) return;
             // 一行轻分隔和最多四行状态共同占用预留区；正文不能进入分隔行。
             int rows = 1 + Math.min(MAX_ROWS - 1, Math.max(1, lines.size()));
             if (!usable(screen, rows)) { disable(); return; }
             boolean changed = lastScreen == null || rows != footerRows
                     || screen.width() != lastScreen.width() || screen.height() != lastScreen.height()
                     || screen.windowTop() != lastScreen.windowTop()
-                    // Win32 正文输出可能越过 VT margin；缓冲区已满时 windowTop 也不会再增长。
+                    // 正文使用全屏原生滚动；缓冲区已满时 windowTop 也不会再增长。
                     // 每次检查实际光标，先为刚输出的正文腾出空间，不能直接覆盖底部几行。
                     || screen.cursorRow() > screen.height() - rows;
             if (changed) establish(screen, rows);
@@ -92,19 +96,49 @@ final class BottomStatusBar implements AutoCloseable {
             writer.print("\0338");
             writer.flush();
             if (writer.checkError()) disable();
+            else {
+                painted = true;
+                lastScreen = surface.screen();
+            }
         } catch (Throwable unavailable) {
             disable();
         }
     }
 
+    /** 正文输出前清除仍属于底栏的文字，避免新短行留下旧字段的尾巴。 */
+    synchronized void beforeOutput() {
+        if (!active() || !painted) return;
+        try {
+            Screen screen = surface.screen();
+            if (screen == null || browsingHistory(screen)) return;
+            if (lastScreen != null && screen.width() == lastScreen.width()
+                    && screen.height() == lastScreen.height() && screen.windowTop() == lastScreen.windowTop()) {
+                writer.print("\0337");
+                int first = Math.max(screen.height() - footerRows + 1, screen.cursorRow());
+                for (int row = first; row <= screen.height(); row++) {
+                    // 输入回显可能已经占据底栏的部分行，只清除光标之后，保留用户刚输入的内容。
+                    int column = row == screen.cursorRow() ? screen.cursorColumn() : 1;
+                    writer.print(ESC + row + ";" + column + "H" + ESC + "0K");
+                }
+                writer.print("\0338");
+                writer.flush();
+            }
+            painted = false;
+        } catch (Throwable unavailable) { disable(); }
+    }
+
+    private boolean browsingHistory(Screen screen) {
+        return screen != null && (screen.cursorRow() < 1 || screen.cursorRow() > screen.height()
+                // 仅向上滚一两行时输入光标仍在视窗内，也必须尊重用户的历史位置。
+                || lastScreen != null && screen.width() == lastScreen.width()
+                && screen.height() == lastScreen.height() && screen.windowTop() < lastScreen.windowTop());
+    }
+
     private void establish(Screen screen, int rows) {
         int column = screen.cursorColumn();
         int row = screen.cursorRow();
-        if (lastScreen != null) {
-            writer.print(ESC + "r");
-            // windowTop 可随正文输出移动；旧缓冲区行可能已成为新正文，绝不能按旧坐标擦除。
-            // resize 也可能重排文本，保留旧状态痕迹比误删正文更安全。
-        }
+        // 不设置 DECSTBM 局部滚动区：局部滚动会让 Windows Terminal 等终端丢失历史。
+        // windowTop 可随输出移动；旧缓冲区行可能已成为正文，绝不能按旧坐标擦除。
         int contentRows = screen.height() - rows;
         if (row > contentRows) {
             // 先在完整屏幕末尾向上滚动，为状态区腾出空白，防止覆盖刚输出的正文。
@@ -113,7 +147,6 @@ final class BottomStatusBar implements AutoCloseable {
             writer.print("\n".repeat(scroll));
             row -= scroll;
         }
-        writer.print(ESC + "1;" + contentRows + "r");
         writer.print(ESC + Math.min(contentRows, row) + ";" + column + "H");
         footerRows = rows;
         lastScreen = screen;
@@ -129,9 +162,7 @@ final class BottomStatusBar implements AutoCloseable {
         if (!active) return;
         active = false;
         try {
-            // 原生查询失败或视窗滚动后不能依赖上一帧坐标；只恢复模式，不擦除任何未知归属的行。
-            // 直接保存当前光标，也避免查询失败时把光标移到过期位置。
-            writer.print("\0337" + ESC + "r\0338");
+            // 没有局部滚动区需要重置；不发光标控制，关闭时也能留在用户正在翻阅的位置。
             writer.flush();
         } finally {
             try { surface.restore(); } catch (Throwable ignored) { }
