@@ -34,12 +34,19 @@ class InteractiveResumeTest {
     private SessionStore store;
     private final List<JsonNode> requests = new CopyOnWriteArrayList<>();
     private boolean failFirstStream;
+    private boolean removeSessionsOnReply;
 
     @BeforeEach void start() throws Exception {
         store = new SessionStore(workspace);
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/v1/chat/completions", exchange -> {
             requests.add(JSON.readTree(exchange.getRequestBody()));
+            if (removeSessionsOnReply) {
+                // 仅删除本测试临时工作区，复现外部清理连同会话目录一起移除。
+                try (var paths = Files.walk(workspace.resolve(".harness/sessions"))) {
+                    for (Path path : paths.sorted(java.util.Comparator.reverseOrder()).toList()) Files.delete(path);
+                }
+            }
             if (failFirstStream && requests.size() == 1 && requests.getFirst().path("stream").asBoolean()) {
                 String events = "data: {\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\n"
                         + "data: {\"error\":{\"message\":\"private-upstream-body\"}}\n\n";
@@ -75,6 +82,19 @@ class InteractiveResumeTest {
         assertTrue(result.out.contains("/resume 序号或会话ID"));
         assertTrue(requests.isEmpty());
         assertTrue(store.recent(20).isEmpty());
+    }
+
+    @Test void deletedSessionDirectoryKeepsHistoryAndLocalCommandsWithoutReplayingWorkOrExitingEarly() throws Exception {
+        removeSessionsOnReply = true;
+        Result result = run("先完成任务\n/history all\n禁止重复执行的后续任务\n/help\n/exit\n");
+        assertEquals(1, result.code, result.err);
+        assertTrue(result.err.contains("会话未保存"), result.err);
+        assertTrue(result.out.contains("历史对话"), result.out);
+        assertTrue(result.out.contains("先完成任务") && result.out.contains("本地回复"), result.out);
+        assertTrue(result.out.contains("已暂停新任务"), result.out);
+        assertTrue(result.out.contains("/resume 序号或会话ID"), "存储失败后仍应读取 /help 和 /exit");
+        assertEquals(1, requests.size(), "不能在存储损坏后继续模型请求或重放操作");
+        assertFalse(Files.exists(workspace.resolve(".harness/sessions")), "不能静默重建目录并复用已删除的锁");
     }
 
     @Test void selectingListedSessionDoesNotRequestModelOrRewriteCheckpoint() throws Exception {
@@ -231,6 +251,59 @@ class InteractiveResumeTest {
 
     private void save(String id, String model, String task) throws Exception {
         store.save(id, "openai-compatible", model, "COMPLETED", List.of(ChatMessage.user(task)));
+    }
+
+    @Test void rewindCreatesPersistentBranchWithoutChangingOriginalOrReplayingTools() throws Exception {
+        ToolCall read = new ToolCall("read-old", "read_file", "{\"path\":\"old.txt\"}");
+        store.save("original", "openai-compatible", "saved-model", "COMPLETED", List.of(
+                ChatMessage.system("旧系统"), ChatMessage.user("保留的提问"),
+                ChatMessage.assistantToolCalls("", List.of(read)), ChatMessage.toolResult(read, "历史文件结果"),
+                ChatMessage.assistant("保留的回答"), ChatMessage.user("丢弃的提问"), ChatMessage.assistant("丢弃的回答")));
+        byte[] original = Files.readAllBytes(checkpoint("original"));
+        Files.writeString(workspace.resolve("changed.txt"), "文件修改不能被对话回退撤销");
+        Result result = run("/resume original\n/rewind\n2\n新的分支任务\n/exit\n");
+        assertEquals(0, result.code, result.err);
+        assertTrue(result.out.contains("已回退到第 2 条提问之前"));
+        assertArrayEquals(original, Files.readAllBytes(checkpoint("original")));
+        assertEquals(1, requests.size());
+        String wire = requests.getFirst().path("messages").toString();
+        assertTrue(wire.contains("保留的回答"));
+        assertTrue(wire.contains("历史文件结果"));
+        assertFalse(wire.contains("丢弃的"));
+        assertTrue(wire.contains("新的分支任务"));
+        assertEquals("文件修改不能被对话回退撤销", Files.readString(workspace.resolve("changed.txt")));
+        var branch = store.recent(20).stream().filter(s -> !s.id().equals("original")).findFirst().orElseThrow();
+        assertEquals(List.of("保留的提问", "新的分支任务"), users(store.load(branch.id())));
+        try (var lease = store.lock(branch.id())) { assertTrue(lease.lock().isValid()); }
+    }
+
+    @Test void rewindToStartSavesReadySessionAndCanResumeWithoutModel() throws Exception {
+        save("original", "saved-model", "旧任务");
+        byte[] original = Files.readAllBytes(checkpoint("original"));
+        Result result = run("/resume original\n/rewind 1\n/exit\n");
+        assertEquals(0, result.code, result.err);
+        assertTrue(requests.isEmpty());
+        assertArrayEquals(original, Files.readAllBytes(checkpoint("original")));
+        var branch = store.recent(20).stream().filter(s -> !s.id().equals("original")).findFirst().orElseThrow();
+        assertEquals("READY", branch.status());
+        assertTrue(users(store.load(branch.id())).isEmpty());
+        Result resumed = run("/resume " + branch.id() + "\n新开始\n/exit\n");
+        assertEquals(0, resumed.code, resumed.err);
+        assertEquals(List.of("新开始"), users(store.load(branch.id())));
+        assertFalse(requests.getFirst().path("messages").toString().contains("旧任务"));
+    }
+
+    @Test void invalidAndCancelledRewindStayLocalAndPreserveSession() throws Exception {
+        save("original", "saved-model", "旧任务");
+        byte[] original = Files.readAllBytes(checkpoint("original"));
+        Result result = run("/rewind\n/resume original\n/rewind 0\n/rewind 999999999999999\n/rewind bad\n/rewind\n\n/exit\n");
+        assertEquals(0, result.code, result.err);
+        assertTrue(result.out.contains("当前没有可回退的提问"));
+        assertTrue(result.out.contains("已取消回退"));
+        assertTrue(result.out.contains("回退序号无效"));
+        assertEquals(1, store.recent(20).size());
+        assertArrayEquals(original, Files.readAllBytes(checkpoint("original")));
+        assertTrue(requests.isEmpty());
     }
     private Path checkpoint(String id) { return workspace.resolve(".harness/sessions/" + id + ".json"); }
     private List<String> users(SessionStore.Session session) {

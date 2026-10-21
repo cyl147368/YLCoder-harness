@@ -223,7 +223,7 @@ def verify_dashboard(launcher=None):
         assert stdout.count('进程累计') == 1, '累计详情只应由显式 /status 展开一次'
         for line in stdout.splitlines():
             if '› ' in line or line.strip() == '›':
-                assert line.strip() == '›', ('提示符和后续内容挤在一起', line)
+                assert line.strip() == '你 ›', ('提示符和后续内容挤在一起', line)
         assert stdout.count('›') >= 3
         # 管道模式不重绘屏幕，但每次输入前均有紧凑状态区，不能把状态塞进回答正文。
         before_prompt = stdout.split('›')[:-1]

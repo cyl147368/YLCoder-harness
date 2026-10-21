@@ -6,6 +6,14 @@ import java.io.StringWriter;
 import static org.junit.jupiter.api.Assertions.*;
 
 class StreamingOutputTest {
+    @Test void indentsStreamedLinesWithoutRepeatingIndentAcrossChunks() {
+        var text = new StringWriter();
+        var output = new StreamingOutput(new PrintWriter(text), true, "  ");
+        output.delta("第一"); output.delta("行\n\n第"); output.delta("二行");
+        output.endResponse("第一行\n\n第二行");
+        assertEquals("  第一行\n\n  第二行" + System.lineSeparator(), text.toString());
+        assertTrue(output.displayed("第一行\n\n第二行"));
+    }
     @Test void printsAndFlushesBeforeResponseCompletionAndSuppressesFinalDuplicate() {
         StringWriter text = new StringWriter();
         StreamingOutput output = new StreamingOutput(new PrintWriter(text), true);

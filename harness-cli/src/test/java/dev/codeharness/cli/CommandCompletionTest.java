@@ -8,6 +8,7 @@ class CommandCompletionTest {
     @Test void commandAndArgumentCandidatesNeverInsertWholeCommandsIntoArgumentPosition() {
         var choices = CommandCompletion.candidates(List.of(new SessionStore.Summary("saved-session", "p", "m", "COMPLETED", "", "")));
         assertEquals(List.of("/resume"), CommandCompletion.words("/res", "/res", choices));
+        assertEquals(List.of("/rewind"), CommandCompletion.words("/rew", "/rew", choices));
         assertEquals(List.of("/status", "/stream"), CommandCompletion.words("/st", "/st", choices));
         assertEquals(List.of("off"), CommandCompletion.words("/stream of", "of", choices));
         assertEquals(List.of("on", "off"), CommandCompletion.words("/stream ", "", choices));

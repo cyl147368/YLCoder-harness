@@ -10,6 +10,16 @@ api-key-env: HARNESS_API_KEY
 timeout-seconds: 120
 header-env: {}
 
+# 默认无需额外密钥；公开搜索被限流时可配置自己的 SearXNG。
+web:
+  enabled: true
+  provider: auto
+  # provider: searxng
+  # search-url: https://search.example.com/search
+  timeout-seconds: 15
+  max-results: 5
+  max-page-chars: 10000
+
 agent:
   # 不兼容流式的网关设为 false；交互中也可用 /stream off 临时关闭。
   stream: true

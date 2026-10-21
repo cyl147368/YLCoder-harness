@@ -9,10 +9,16 @@ final class StreamingOutput {
     private final StringBuilder current = new StringBuilder();
     private String displayedResponse = "";
     private boolean lineOpen;
+    private final String indent;
 
     StreamingOutput(PrintWriter output, boolean enabled) {
+        this(output, enabled, "");
+    }
+
+    StreamingOutput(PrintWriter output, boolean enabled, String indent) {
         this.output = output;
         this.enabled = enabled;
+        this.indent = indent;
     }
 
     synchronized void startResponse() {
@@ -24,8 +30,12 @@ final class StreamingOutput {
     synchronized void delta(String delta) {
         if (!enabled || delta == null || delta.isEmpty()) return;
         current.append(delta);
-        output.print(delta);
-        lineOpen = !delta.endsWith("\n");
+        for (int index = 0; index < delta.length(); index++) {
+            char character = delta.charAt(index);
+            if (!lineOpen && character != '\n') output.print(indent);
+            output.print(character);
+            lineOpen = character != '\n';
+        }
         output.flush();
     }
 

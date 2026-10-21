@@ -2,6 +2,7 @@
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import shutil
@@ -14,6 +15,9 @@ SOURCE_JAR = ROOT / 'harness-cli/target/harness-cli-0.1.0-SNAPSHOT-all.jar'
 JAR = SOURCE_JAR if SOURCE_JAR.is_file() else ROOT / 'lib/ylc.jar'
 PRIVATE_TASK = '只属于主智能体的任务内容，不应发送给审核子agent；保留 "带空格的文字" 和 C:\\中文目录\\space name\\file.txt。'
 SAFE_COMMAND = 'dir /b' if os.name == 'nt' else 'pwd'
+DATE_COMMAND = "date '+%Y-%m-%d %H:%M:%S %Z (%z)'"
+TIME_COMMAND = ('powershell -NoProfile -Command "Get-Date -Format \'yyyy-MM-dd HH:mm:ss zzz\'"'
+                if os.name == 'nt' else "date '+%Y-%m-%d %H:%M:%S %z'")
 
 
 def verify_review(launcher=None):
@@ -21,7 +25,13 @@ def verify_review(launcher=None):
     with tempfile.TemporaryDirectory(prefix='ylc review 中文 ') as temporary:
         base = Path(temporary)
         for case in ('approved-cache', 'manual', 'malformed', 'http-error', 'disabled', 'high-risk', 'all-allowed',
-                     'git-status-approved', 'git-status-manual', 'git-status-filter'):
+                     'git-status-approved', 'git-status-manual', 'git-status-filter',
+                     'time-query-approved', 'date-query-approved', 'time-query-manual', 'time-injection',
+                     'git-clean-preview', 'git-clean-delete', 'rg-files-approved'):
+            if case == 'rg-files-approved' and not shutil.which('rg'):
+                records.append({'case': case, 'mainRequests': 0, 'reviewRequests': 0,
+                                'status': 'SKIP', 'reason': '本机未安装可选的 ripgrep'})
+                continue
             workspace = base / case
             workspace.mkdir()
             marker = workspace / 'marker.txt'
@@ -33,9 +43,23 @@ def verify_review(launcher=None):
             config.write_text('{}\n', encoding='utf-8')
             state = {'main': [], 'review': [], 'errors': []}
             command = 'echo AUTO_REVIEW_BLOCKED > blocked.txt' if case == 'high-risk' else SAFE_COMMAND
-            repeated = case in ('approved-cache', 'git-status-approved')
+            if case.startswith('time-query-'):
+                command = TIME_COMMAND
+            elif case == 'date-query-approved':
+                command = DATE_COMMAND
+            elif case == 'time-injection':
+                command = TIME_COMMAND + ' > blocked.txt'
+            elif case == 'git-clean-preview':
+                command = 'git clean -nd'
+            elif case == 'git-clean-delete':
+                command = 'git clean -fd'
+            elif case == 'rg-files-approved':
+                command = "rg --files --hidden -g AGENTS.md -g '!.git'"
+                (workspace / 'AGENTS.md').write_text('fixture instruction', encoding='utf-8')
+            repeated = case in ('approved-cache', 'git-status-approved', 'date-query-approved')
             if case.startswith('git-status-'):
-                command = 'git status --short'
+                command = 'git status --short --branch --untracked-files=all' if case == 'git-status-approved' else 'git status --short'
+            if case.startswith('git-'):
                 git = shutil.which('git')
                 assert git, 'Git 状态审核验收需要已安装的 Git'
                 git_env = {k: v for k, v in os.environ.items() if not k.upper().startswith('GIT_')}
@@ -65,14 +89,14 @@ def verify_review(launcher=None):
                             assert 1 <= body['max_tokens'] <= 96
                             assert len(body['messages']) == 2
                             assert PRIVATE_TASK not in json.dumps(body, ensure_ascii=False)
-                            assert command in json.dumps(body, ensure_ascii=False)
+                            assert json.loads(body['messages'][-1]['content'])['command'] == command
                             assert 'fixture\n' not in json.dumps(body, ensure_ascii=False)
                             if case == 'http-error':
                                 self.send_response(503)
                                 self.end_headers()
                                 self.wfile.write(b'DO_NOT_LOG_REVIEW_SECRET')
                                 return
-                            text = '{"decision":"manual"}' if case in ('manual', 'git-status-manual') else (
+                            text = '{"decision":"manual"}' if case in ('manual', 'git-status-manual', 'time-query-manual') else (
                                 '{"decision":"approve"} trailing' if case == 'malformed' else '{"decision":"approve"}')
                             message = {'role': 'assistant', 'content': text}
                         elif len(state['main']) == 1:
@@ -84,10 +108,19 @@ def verify_review(launcher=None):
                             assert len(state['main']) == 2
                             outputs = [m['content'] for m in body['messages'] if m['role'] == 'tool']
                             assert len(outputs) == (2 if repeated else 1)
-                            approved = case in ('approved-cache', 'all-allowed', 'git-status-approved')
+                            approved = case in ('approved-cache', 'all-allowed', 'git-status-approved',
+                                                'time-query-approved', 'date-query-approved', 'git-clean-preview', 'rg-files-approved')
                             assert all(('退出码：0' if approved else '未获批准') in output for output in outputs), outputs
+                            if case in ('time-query-approved', 'date-query-approved'):
+                                assert all(re.search(r'\b\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\b', output)
+                                           for output in outputs), outputs
+                                assert all(re.search(r'[+-]\d{2}:?\d{2}', output) for output in outputs), outputs
                             if case == 'approved-cache' and os.name == 'nt':
                                 assert all('SHOULD_NOT_LIST_RECURSIVELY' not in output for output in outputs)
+                            if case == 'git-clean-preview':
+                                assert all('marker.txt' in output and '.harness' not in output for output in outputs), outputs
+                            if case == 'rg-files-approved':
+                                assert all('AGENTS.md' in output and '.harness' not in output and '.git' not in output for output in outputs), outputs
                             message = {'role': 'assistant', 'content': '本地审核验收完成。'}
                         response = json.dumps({'choices': [{'message': message,
                             'finish_reason': 'tool_calls' if message.get('tool_calls') else 'stop'}],
@@ -141,12 +174,14 @@ def verify_review(launcher=None):
             assert '[y/N]' not in run.stderr, '管道模式不能读取确认回答'
             assert not (workspace / 'blocked.txt').exists()
             assert marker.read_text(encoding='utf-8') == 'fixture\n'
-            expected_reviews = int(case in ('approved-cache', 'manual', 'malformed', 'http-error', 'git-status-approved', 'git-status-manual'))
+            expected_reviews = int(case in ('approved-cache', 'manual', 'malformed', 'http-error', 'git-status-approved',
+                                             'git-status-manual', 'time-query-approved', 'date-query-approved', 'time-query-manual',
+                                             'git-clean-preview', 'rg-files-approved'))
             assert len(state['main']) == 2 and len(state['review']) == expected_reviews, (case, state)
             review = result['review']
             assert review['requests'] == expected_reviews
             assert review['cacheHits'] == int(repeated)
-            assert review['approved'] == (2 if repeated else 0)
+            assert review['approved'] == (2 if repeated else 1 if case in ('time-query-approved', 'git-clean-preview', 'rg-files-approved') else 0)
             assert review['unreportedRequests'] == int(case == 'http-error')
             known = expected_reviews and case != 'http-error'
             assert result['usage']['inputTokens'] == 26 + (50 if known else 0), (case, result)

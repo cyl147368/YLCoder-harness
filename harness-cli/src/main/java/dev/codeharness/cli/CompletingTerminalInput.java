@@ -19,6 +19,9 @@ final class CompletingTerminalInput implements TerminalInput {
     private final LineReader reader;
     private Supplier<List<String>> candidates = List::of;
     private Runnable interruptHandler = () -> { };
+    private Runnable escapeHandler = () -> { };
+    private TaskKeyMonitor taskKeys;
+    private boolean taskInput;
 
     static TerminalInput open() {
         if ("dumb".equals(System.getenv("TERM"))) return null;
@@ -53,18 +56,48 @@ final class CompletingTerminalInput implements TerminalInput {
         reader.setVariable(LineReader.HISTORY_SIZE, 100);
         // 单个匹配直接补全，多个匹配显示候选并可继续按 Tab 选择。
         reader.getKeyMaps().get(LineReader.MAIN).bind(new org.jline.reader.Reference(LineReader.COMPLETE_WORD), "\t");
+        reader.getWidgets().put("ylc-escape", () -> escapeLine(false));
+        reader.getWidgets().put("ylc-double-escape", () -> escapeLine(true));
+        var keys = reader.getKeyMaps().get(LineReader.MAIN);
+        keys.setAmbiguousTimeout(80);
+        keys.bind(new org.jline.reader.Reference("ylc-escape"), "\033");
+        keys.bind(new org.jline.reader.Reference("ylc-double-escape"), "\033\033");
+    }
+
+    private boolean escapeLine(boolean twice) {
+        escapeHandler.run();
+        if (twice) escapeHandler.run();
+        reader.getBuffer().clear();
+        reader.callWidget(LineReader.ACCEPT_LINE);
+        return true;
     }
 
     @Override public boolean isTerminal() { return true; }
     @Override public boolean editsLine() { return true; }
     @Override public String readLine() throws IOException { return readCommand("", List::of); }
     @Override public String readCommand(String prompt, Supplier<List<String>> candidates) throws IOException {
+        pauseTaskInput();
         this.candidates = candidates;
         try { return reader.readLine(prompt); }
         catch (EndOfFileException end) { return null; }
         catch (UserInterruptException interrupted) { interruptHandler.run(); return null; }
         catch (java.io.IOError failure) { throw new IOException("无法读取终端输入", failure.getCause()); }
-        finally { this.candidates = List::of; }
+        finally {
+            this.candidates = List::of;
+            if (taskInput) resumeTaskInput();
+        }
+    }
+    @Override public Runnable onEscape(Runnable handler) {
+        escapeHandler = handler;
+        return () -> escapeHandler = () -> { };
+    }
+    @Override public void startTaskInput() { taskInput = true; resumeTaskInput(); }
+    @Override public void stopTaskInput() { taskInput = false; pauseTaskInput(); }
+    private void resumeTaskInput() {
+        if (taskKeys == null) taskKeys = new TaskKeyMonitor(terminal, () -> escapeHandler.run(), reader::runMacro);
+    }
+    private void pauseTaskInput() {
+        if (taskKeys != null) { taskKeys.close(); taskKeys = null; }
     }
     @Override public Runnable onInterrupt(Runnable handler) {
         interruptHandler = handler;
@@ -74,5 +107,5 @@ final class CompletingTerminalInput implements TerminalInput {
             interruptHandler = () -> { };
         };
     }
-    @Override public void closeEditor() throws IOException { terminal.close(); }
+    @Override public void closeEditor() throws IOException { stopTaskInput(); terminal.close(); }
 }

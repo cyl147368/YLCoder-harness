@@ -18,6 +18,16 @@ public final class HarnessConfig {
     public Agent agent = new Agent();
     public Permissions permissions = new Permissions();
     public Mcp mcp = new Mcp();
+    public Web web = new Web();
+
+    public static final class Web {
+        public boolean enabled = true;
+        public String provider = "auto";
+        @JsonProperty("search-url") public String searchUrl;
+        @JsonProperty("timeout-seconds") public int timeoutSeconds = 15;
+        @JsonProperty("max-results") public int maxResults = 5;
+        @JsonProperty("max-page-chars") public int maxPageChars = 10_000;
+    }
 
     public static final class Agent {
         public boolean stream = true;

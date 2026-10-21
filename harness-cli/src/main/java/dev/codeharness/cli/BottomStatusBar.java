@@ -66,6 +66,10 @@ final class BottomStatusBar implements AutoCloseable {
     }
 
     synchronized void update(List<String> lines) {
+        update(lines, false);
+    }
+
+    synchronized void update(List<String> lines, boolean color) {
         if (!active()) return;
         try {
             Screen screen = surface.screen();
@@ -88,9 +92,9 @@ final class BottomStatusBar implements AutoCloseable {
                 writer.print(ESC + (start + index) + ";1H" + ESC + "2K");
                 if (index == 0) {
                     // 分隔线由程序生成，保留右侧安全列；不接受外部颜色或控制序列。
-                    writer.print("  " + "─".repeat(screen.width() - 3));
+                    writer.print(tint("  " + "─".repeat(screen.width() - 3), "90", color));
                 } else if (index - 1 < lines.size()) {
-                    writer.print(fit(lines.get(index - 1), screen.width() - 1));
+                    writer.print(paintLine(fit(lines.get(index - 1), screen.width() - 1), index - 1, color));
                 }
             }
             writer.print("\0338");
@@ -103,6 +107,30 @@ final class BottomStatusBar implements AutoCloseable {
         } catch (Throwable unavailable) {
             disable();
         }
+    }
+
+    /** 先清理并裁剪纯文本，再由固定调色板着色；绝不接纳配置中的 ANSI 指令。 */
+    static String paintLine(String text, int row, boolean color) {
+        if (!color) return text;
+        String[] parts = text.split(" · ", -1);
+        var output = new StringBuilder();
+        for (int index = 0; index < parts.length; index++) {
+            if (index > 0) output.append(tint(" · ", "90", true));
+            String code = switch (row) {
+                case 0 -> index == 0 ? "1;35" : "36";
+                case 1 -> index == 0 ? "36" : "35";
+                case 2 -> text.contains("未报告") || text.contains("尚无请求") ? "90" : "32";
+                default -> index > 0 ? (parts[index].contains("联网") ? "36" : "90")
+                        : text.contains("未完成") ? "31" : text.contains("取消") || text.contains("上限") ? "33"
+                        : text.contains("思考") || text.contains("执行") || text.contains("输出") || text.contains("重试") ? "33" : "32";
+            };
+            output.append(tint(parts[index], code, true));
+        }
+        return output.toString();
+    }
+
+    private static String tint(String value, String code, boolean color) {
+        return color ? ESC + code + "m" + value + ESC + "0m" : value;
     }
 
     /** 正文输出前清除仍属于底栏的文字，避免新短行留下旧字段的尾巴。 */

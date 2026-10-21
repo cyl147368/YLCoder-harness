@@ -20,6 +20,10 @@ interface TerminalInput {
     default void closeEditor() throws IOException { }
     /** 注册会话取消处理器；返回用于恢复原处理器的操作。 */
     default Runnable onInterrupt(Runnable handler) { return () -> { }; }
+    /** Esc 不代表 EOF；任务执行期间由唯一的按键读取器接管输入。 */
+    default Runnable onEscape(Runnable handler) { return () -> { }; }
+    default void startTaskInput() { }
+    default void stopTaskInput() { }
 
     static TerminalInput system() {
         var console = System.console();

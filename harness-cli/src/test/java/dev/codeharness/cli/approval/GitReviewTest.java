@@ -96,7 +96,9 @@ class GitReviewTest {
         });
         List<String> variants = List.of("git status", "git status --short", "git status -s", "git status --porcelain",
                 "git status --porcelain=v1", "git status --porcelain=v2", "git status -sb",
-                "git status --short --branch", "git status --branch --short");
+                "git status --short --branch", "git status --branch --short",
+                "git status --short --branch --untracked-files=all", "git status --untracked-files=all --branch --short",
+                "git status -sb -uall");
         for (String text : variants) {
             String result = tools.find("run_command").orElseThrow().execute(JSON.writeValueAsString(java.util.Map.of("command", text)));
             assertTrue(result.startsWith("退出码：0"), result);
@@ -149,7 +151,10 @@ class GitReviewTest {
         var reviewer = new CommandReview(request -> { calls.incrementAndGet(); return ChatResponse.text("{\"decision\":\"approve\"}"); },
                 Duration.ofSeconds(1), 8, ignored -> {});
         for (String text : List.of("git status && echo bad", "git -c core.fsmonitor=bad status", "git diff", "git show",
-                "git diff --output=out.txt", "git diff --stat ../outside", "git -C .. status", "git push", "git log -p")) {
+                "git diff --output=out.txt", "git diff --stat ../outside", "git -C .. status", "git push", "git log -p",
+                "git clean -fd", "git clean -fdx", "git clean --force", "git clean -n && git clean -fd",
+                "git clean -n -f", "git clean -nd ../outside", "git status --short --untracked-files=all > out.txt",
+                "git status --short --porcelain=v2", "git status --untracked-files=bad")) {
             assertFalse(reviewer.review(new CommandApproval.Request(root.toRealPath(), text)).approved(), text);
         }
         Path child = Files.createDirectory(root.resolve("child"));
@@ -159,6 +164,34 @@ class GitReviewTest {
         Files.writeString(root.resolve(".git/commondir"), "../../outside\n");
         assertFalse(reviewer.review(new CommandApproval.Request(root.toRealPath(), "git status")).approved());
         assertEquals(0, calls.get());
+    }
+
+    @Test void cleanPreviewIsReviewedAndNeverDeletesFilesOrUsesConfiguredHelpers() throws Exception {
+        Path root = Files.createDirectory(temporary.resolve("preview"));
+        Path git = availableGit(root);
+        command(git, root, "init", "--quiet");
+        command(git, root, "config", "core.fsmonitor", "echo helper > helper-invoked.txt");
+        Path file = Files.writeString(root.resolve("keep.txt"), "not deleted");
+        Path nested = Files.createDirectories(root.resolve("nested"));
+        Files.writeString(nested.resolve("also-keep.txt"), "nested data");
+        var reviewer = new CommandReview(request -> ChatResponse.text("{\"decision\":\"approve\"}"),
+                Duration.ofSeconds(2), 8, ignored -> {});
+        var tools = WorkspaceTools.createWithCommandApproval(root, request -> {
+            var result = reviewer.review(request);
+            assertTrue(result.approved(), result.reason());
+            assertTrue(result.arguments().contains("--dry-run"));
+            assertFalse(result.arguments().contains("-f"));
+            return CommandApproval.Decision.direct(result.arguments());
+        });
+        for (String query : List.of("git clean -nd", "git clean -dn", "git clean --dry-run -d", "git clean -d -n")) {
+            String output = tools.find("run_command").orElseThrow().execute(JSON.writeValueAsString(java.util.Map.of("command", query)));
+            assertTrue(output.startsWith("退出码：0"), output);
+            assertTrue(output.contains("keep.txt") && output.contains("nested"), output);
+            assertEquals("not deleted", Files.readString(file));
+            assertTrue(Files.exists(nested.resolve("also-keep.txt")));
+        }
+        assertEquals(4, reviewer.stats().requests());
+        assertFalse(Files.exists(root.resolve("helper-invoked.txt")));
     }
 
     private static Path availableGit(Path root) {

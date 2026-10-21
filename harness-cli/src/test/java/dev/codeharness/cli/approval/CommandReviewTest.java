@@ -52,6 +52,28 @@ class CommandReviewTest {
         assertEquals(2, notices.size());
     }
 
+    @Test
+    void fixedSystemTimeQueryIsPresentedToAiAndRunsAsDirectReadOnlyArguments() throws Exception {
+        String command = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("win")
+                ? "powershell -NoProfile -Command \"Get-Date -Format 'yyyy-MM-dd HH:mm:ss zzz'\""
+                : "date '+%Y-%m-%d %H:%M:%S %Z (%z)'";
+        AtomicReference<ChatRequest> received = new AtomicReference<>();
+        var review = new CommandReview(request -> {
+            received.set(request);
+            return ChatResponse.text(YES);
+        }, Duration.ofSeconds(1), 8, ignored -> {});
+        var result = review.review(request(command));
+        assertTrue(result.approved());
+        assertNotNull(received.get(), "固定只读时间查询应交由 AI 审核，而非直接跳过审核");
+        assertEquals(command, new com.fasterxml.jackson.databind.ObjectMapper()
+                .readTree(received.get().messages().getLast().content()).path("command").asText());
+        assertTrue(Path.of(result.arguments().getFirst()).isAbsolute());
+        assertFalse(result.arguments().stream().anyMatch(value -> value.equals("/c") || value.equals("-c")),
+                "审核通过后必须执行固定参数，不得执行原始 shell 字符串");
+        assertEquals(1, review.stats().requests());
+        assertEquals(1, review.stats().approved());
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"ls", "ls -a", "ls -l", "ls -la", "ls -al", "dir", "dir /b", "dir /a", "dir /a /b", "dir /b /a"})
     void supportsOnlyFixedDirectoryListingVariants(String command) throws Exception {
@@ -61,14 +83,47 @@ class CommandReviewTest {
     }
 
     @ParameterizedTest
+    @ValueSource(strings = {"date", "date '+%Y-%m-%d %H:%M:%S %Z (%z)'", "date \"+%Y-%m-%d %H:%M:%S %z\"",
+            "date +%Y-%m-%d", "date +%H:%M:%S", "date '+%Y-%m-%d %H:%M:%S'"})
+    void dateReadQueriesReachAiOnEitherPlatform(String command) throws Exception {
+        var review = reviewer();
+        assertTrue(review.review(request(command)).approved());
+        assertEquals(1, review.stats().requests());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"Get-Date", "get-date -format 'yyyy-MM-dd'", "Get-Date -Format o", "Get-Date -Format s",
+            "Get-Date -Format u", "Get-Date -Format HH:mm:ss", "Get-Date -Format \"yyyy-MM-dd HH:mm:ss\"",
+            "powershell.exe -NoProfile -Command \"Get-Date\"",
+            "powershell -NoProfile -Command 'Get-Date -Format \"yyyy-MM-dd HH:mm:ss zzz\"'"})
+    void powerShellQueryHasNoDependencyOnProfilesOrWorkspaceExecutable(String command) throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(System.getProperty("os.name", "").startsWith("Windows"));
+        for (String name : List.of("date.cmd", "powershell.cmd", "powershell.exe", "Get-Date.ps1"))
+            Files.writeString(workspace.resolve(name), "must not execute");
+        var outcome = reviewer().review(request(command));
+        assertTrue(outcome.approved());
+        assertFalse(Path.of(outcome.arguments().getFirst()).startsWith(workspace));
+        assertTrue(outcome.arguments().containsAll(List.of("-NoProfile", "-NonInteractive")));
+        assertTrue(outcome.arguments().getLast().contains("[DateTimeOffset]::"));
+        assertFalse(outcome.arguments().getLast().contains("Get-Date"), "执行表达式不应依赖工作区函数或模块自动加载");
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {
             "", " pwd", "pwd ", "PWD", "pwd\n", "pwd\r\nls", "pwd\t", "pwd\u001b[31m",
             "pwd && whoami", "pwd&whoami", "pwd|whoami", "pwd;whoami", "pwd > out.txt", "pwd < input.txt",
             "pwd $(id)", "pwd `id`", "pwd %PATH%", "pwd !PATH!", "p^wd", "pwd || del /s .", "pwd # comment",
             "ls ..", "ls ../secret", "ls C:\\", "ls .env", "ls /etc", "ls --help", "ls --color=always",
             "dir /s", "dir /b .", "cd ..", "cd /d C:\\", "echo hello", "mvn test", "npm test", "pytest",
-            "git status", "git -c alias.x=!id x", "rg --files", "java -version", "java -jar app.jar",
-            "powershell -File run.ps1", "cmd /c pwd", "./ls", ".\\dir.cmd", "curl https://example.com", "rm -rf .",
+            "git status", "git -c alias.x=!id x", "java -version", "java -jar app.jar",
+            "rg --files --pre malicious", "rg --files --follow", "rg --files ../outside", "rg --files > files.txt",
+            "rg --files -g 'AGENTS.md; whoami'", "rg --files --hidden -g AGENTS.md -g '!.git' && whoami",
+            "powershell -File run.ps1", "powershell -NoProfile -Command \"Get-Date; Remove-Item *\"",
+            "date -s 10:00", "date 10201000", "date +%Y-%m-%d > out.txt", "date && whoami",
+            "Get-Date -Format 'yyyy-MM-dd' | Out-File x", "Get-Date -Format 'yyyy-MM-dd'; Remove-Item *",
+            "powershell -NoProfile -Command \"Get-Date -Format $(whoami)\"",
+            "powershell -NoProfile -Command \"Get-Date -Format 'yyyy-MM-dd'\" & echo injected",
+            "date '+%Y-%m-%d %H:%M:%S %Z (%z) %n'", "date +%s", "cmd /c pwd", "./ls", ".\\dir.cmd", "curl https://example.com", "rm -rf .",
             "ls ＆ whoami", "ls\u0000", "ls -a\u2028rm -rf ."
     })
     void hardVetoNeverCallsModel(String command) throws Exception {

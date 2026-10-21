@@ -9,7 +9,7 @@ final class CommandCompletion {
 
     static List<String> candidates(List<SessionStore.Summary> sessions) {
         var result = new ArrayList<>(List.of("/project", "/status", "/resume", "/history", "/help", "/exit",
-                "/stream", "/stream on", "/stream off", "/history all", "/history 1"));
+                "/stream", "/stream on", "/stream off", "/history all", "/history 1", "/rewind", "/rewind all"));
         for (int index = 0; index < sessions.size(); index++) {
             result.add("/resume " + (index + 1));
             result.add("/resume " + sessions.get(index).id());

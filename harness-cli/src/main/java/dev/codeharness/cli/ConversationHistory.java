@@ -37,9 +37,9 @@ final class ConversationHistory {
             }
             ChatMessage message = messages.get(index);
             String label = switch (message.role()) {
-                case USER -> "你";
-                case ASSISTANT -> "助手";
-                case TOOL -> "工具结果";
+                case USER -> "你 ›";
+                case ASSISTANT -> "◆ YLCoder · 助手";
+                case TOOL -> "· 工具结果";
                 default -> "";
             };
             output.accept("  " + label);

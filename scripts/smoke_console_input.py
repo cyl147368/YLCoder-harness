@@ -30,6 +30,9 @@ class Provider(BaseHTTPRequestHandler):
             assert self.headers.get('Authorization') is None
             request = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
             scenario = getattr(self.server, 'interrupt_case', None)
+            escape_case = getattr(self.server, 'escape_case', None)
+            if escape_case in ('model', 'model-rewind', 'stream') and not self.server.requests:
+                scenario = 'stream' if escape_case == 'stream' else 'model'
             if scenario in ('model', 'stream'):
                 self.server.requests.append(request)
                 if scenario == 'stream':
@@ -57,7 +60,8 @@ class Provider(BaseHTTPRequestHandler):
             elif latest == FIRST:
                 tool = ('read_file', {'path': 'src/中文.txt'})
             elif latest == SECOND:
-                tool = ('run_command', {'command': 'echo console-approved>> approved.txt'})
+                tool = ('run_command', {'command': 'echo started> tool-started.txt & ping -n 30 127.0.0.1'
+                                       if escape_case == 'tool' else 'echo console-approved>> approved.txt'})
             else:
                 assert latest == THIRD, repr(latest)
             if tool:
@@ -165,7 +169,7 @@ def console_child(options):
                 row.type = 1
                 row.event.key.down = down
                 row.event.key.repeat = 1
-                row.event.key.virtual = 0x43 if unit == '\x03' else 0x0d if unit == '\r' else 0x09 if unit == '\t' else 0
+                row.event.key.virtual = 0x43 if unit == '\x03' else 0x0d if unit == '\r' else 0x09 if unit == '\t' else 0x1b if unit == '\x1b' else 0
                 row.event.key.control = 0x0008 if unit == '\x03' else 0
                 row.event.key.character.unicode = unit
                 records.append(row)
@@ -189,14 +193,67 @@ def console_child(options):
     command = [options.launcher, '--config', 'offline.yaml',
                '--provider', 'openai-compatible', '--model', 'console-unicode-fixture',
                '--base-url', options.base_url, '--api-key-env', 'YLC_CONSOLE_UNUSED', '--no-stream']
-    if options.interrupt_case == 'stream':
+    if options.interrupt_case == 'stream' or options.escape_case == 'stream':
         command.remove('--no-stream')
-    if options.interrupt_case:
+    if options.interrupt_case or options.escape_case:
         command.append('--no-auto-review')
+    if options.escape_case == 'tool':
+        command.append('--allow-commands')
     process = subprocess.Popen(command, cwd=options.workspace, env=environment, stdin=inp, stdout=out, stderr=out)
     try:
         # 键盘事件进入控制台输入缓冲区；即使 JVM 尚未进入 readLine 也不会丢失。
-        if options.interrupt_case:
+        escape_evidence = {}
+        if options.escape_case:
+            case = options.escape_case
+            wait_until(lambda: '你 ›' in screen_text())
+            written = 0
+            if case in ('rewind', 'model-rewind'):
+                written += send_keys('/resume escape-history\r')
+                wait_until(lambda: '历史回复二' in screen_text())
+            if case == 'idle':
+                written += send_keys('不应发送的草稿')
+                time.sleep(.15)
+                written += send_keys('\x1b')
+                wait_until(lambda: screen_text().count('你 ›') >= 2)
+            elif case == 'rewind':
+                written += send_keys('\x1b\x1b')
+            else:
+                written += send_keys((SECOND if case in ('approval', 'tool') else THIRD) + '\r')
+                if case in ('model', 'stream', 'model-rewind'):
+                    wait_until(lambda: (Path(options.workspace) / 'model-ready').exists())
+                    if case == 'stream':
+                        wait_until(lambda: '中断流式输出夹具' in screen_text())
+                    # 转义方向键序列不能取消任务；正常编辑输入也不能触发 Esc。
+                    written += send_keys('\x1b[D\x1b[C')
+                    time.sleep(.2)
+                    assert '已取消当前任务' not in screen_text()
+                elif case == 'approval':
+                    wait_until(lambda: '[y/N]' in screen_text())
+                elif case == 'tool':
+                    wait_until(lambda: (Path(options.workspace) / 'tool-started.txt').exists())
+                cancelled_at = time.monotonic()
+                written += send_keys('\x1b')
+                if case == 'model-rewind':
+                    time.sleep(.18)
+                    written += send_keys('\x1b')
+                wait_until(lambda: '已取消当前任务' in screen_text())
+                escape_evidence['cancelLatencyMs'] = round((time.monotonic() - cancelled_at) * 1000)
+                escape_evidence['cancelledSnapshots'] = [json.loads(p.read_text(encoding='utf-8'))['status']
+                                                         for p in (Path(options.workspace) / '.harness/sessions').glob('*.json')]
+            if case in ('rewind', 'model-rewind'):
+                wait_until(lambda: '回退到 ›' in screen_text())
+                original = Path(options.workspace) / '.harness/sessions/escape-history.json'
+                original_bytes = original.read_bytes()
+                written += send_keys('2\r')
+                wait_until(lambda: '已回退到第 2 条提问之前' in screen_text())
+                escape_evidence['originalPreserved'] = original_bytes == original.read_bytes()
+            # 取消后同一进程仍可使用 Tab、继续模型请求；没有遗留中断标志。
+            written += send_keys('/str\toff\r')
+            wait_until(lambda: '已关闭流式输出' in screen_text())
+            written += send_keys(THIRD + '\r')
+            wait_until(lambda: '已完成中文任务。' in screen_text())
+            written += send_keys('/exit\r')
+        elif options.interrupt_case:
             wait_until(lambda: '›' in screen_text())
             case = options.interrupt_case
             written = send_keys('未提交的中文输入' if case == 'idle' else (SECOND if case == 'approval' else THIRD) + '\r')
@@ -220,6 +277,9 @@ def console_child(options):
         evidence = {'initialCodepage': options.codepage, 'finalInputCodepage': kernel.GetConsoleCP(),
                     'finalOutputCodepage': kernel.GetConsoleOutputCP(), 'exitCode': code,
                     'keyboardEventsWritten': written, 'screen': screen}
+        if options.escape_case:
+            evidence.update(escape_evidence)
+            evidence.update({'case': options.escape_case, 'initialConsoleModes': initial_modes, 'finalConsoleModes': console_modes()})
         if options.interrupt_case:
             evidence.update({'case': options.interrupt_case, 'exitLatencyMs': round((time.monotonic() - interrupted_at) * 1000),
                              'initialConsoleModes': initial_modes, 'finalConsoleModes': console_modes()})
@@ -239,6 +299,8 @@ def main():
     parser.add_argument('--child', action='store_true')
     parser.add_argument('--completion', action='store_true', help='验证真实 Tab 补全、恢复后的历史回显和中文输入。')
     parser.add_argument('--interrupt', action='store_true', help='验证 Ctrl+C 在输入、模型等待、流式输出和审批期间退出。')
+    parser.add_argument('--escape', action='store_true', help='验证 Esc 取消后继续和双 Esc 分支回退。')
+    parser.add_argument('--escape-case', choices=('idle', 'model', 'stream', 'approval', 'tool', 'rewind', 'model-rewind'))
     parser.add_argument('--interrupt-case', choices=('idle', 'model', 'stream', 'approval', 'completed'))
     parser.add_argument('--launcher', type=Path, default=ROOT / 'ylc.cmd')
     parser.add_argument('--codepage', type=int, default=65001)
@@ -262,12 +324,25 @@ def main():
     target = ROOT / 'target'
     target.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='console-input-', dir=target) as temporary:
-        cases = ('idle', 'model', 'stream', 'approval', 'completed') if options.interrupt else (None,)
+        cases = ('idle', 'model', 'stream', 'approval', 'tool', 'rewind', 'model-rewind') if options.escape else (
+            ('idle', 'model', 'stream', 'approval', 'completed') if options.interrupt else (None,))
         for codepage, case in ((cp, case) for cp in (936, 65001) for case in cases):
             workspace = Path(temporary) / f'中文 workspace {codepage} {case or "normal"}'
             (workspace / 'src').mkdir(parents=True)
             (workspace / 'src/中文.txt').write_text(FILE_TEXT, encoding='utf-8')
             (workspace / 'offline.yaml').write_text('{}\n', encoding='utf-8')
+            if options.escape and case in ('rewind', 'model-rewind'):
+                session_dir = workspace / '.harness/sessions'
+                session_dir.mkdir(parents=True)
+                (session_dir / 'escape-history.json').write_text(json.dumps({
+                    'version': 1, 'id': 'escape-history', 'workspace': str(workspace.resolve()),
+                    'provider': 'openai-compatible', 'model': 'console-unicode-fixture',
+                    'status': 'COMPLETED', 'updatedAt': '2026-10-19T00:00:00Z',
+                    'transcript': [{'role': 'USER', 'content': '历史提问一', 'toolCalls': [], 'providerMetadata': {}},
+                                   {'role': 'ASSISTANT', 'content': '历史回复一', 'toolCalls': [], 'providerMetadata': {}},
+                                   {'role': 'USER', 'content': '历史提问二', 'toolCalls': [], 'providerMetadata': {}},
+                                   {'role': 'ASSISTANT', 'content': '历史回复二', 'toolCalls': [], 'providerMetadata': {}}]
+                }, ensure_ascii=False), encoding='utf-8')
             if options.completion:
                 session_dir = workspace / '.harness/sessions'
                 session_dir.mkdir(parents=True)
@@ -281,7 +356,8 @@ def main():
             output = workspace / 'console.json'
             with ThreadingHTTPServer(('127.0.0.1', 0), Provider) as server:
                 server.requests, server.errors = [], []
-                server.interrupt_case, server.workspace, server.release = case, workspace, threading.Event()
+                server.interrupt_case, server.workspace, server.release = None if options.escape else case, workspace, threading.Event()
+                server.escape_case = case if options.escape else None
                 serving = threading.Thread(target=server.serve_forever, daemon=True)
                 serving.start()
                 try:
@@ -294,7 +370,7 @@ def main():
                     if options.completion:
                         command.append('--completion')
                     if case:
-                        command.extend(('--interrupt-case', case))
+                        command.extend(('--escape-case' if options.escape else '--interrupt-case', case))
                     child = subprocess.run(command, creationflags=subprocess.CREATE_NEW_CONSOLE,
                                            startupinfo=startup, capture_output=True, timeout=35)
                 finally:
@@ -325,7 +401,7 @@ def main():
                 evidence['passed'] = evidence['passed'] and all(marker in screen for marker in (
                     '已恢复会话：tab-history', '历史回复：中文与 Unicode', '历史提问', '历史对话', '已关闭流式输出'))
                 evidence['tabCompletionAndHistory'] = True
-            if case:
+            if case and not options.escape:
                 expected_saved = [] if case == 'idle' else [SECOND if case == 'approval' else THIRD]
                 evidence['savedStatus'] = state['status'] if len(checkpoints) == 1 else None
                 evidence['passed'] = (child.returncode == 0 and evidence.get('exitCode') == 130 and not server.errors
@@ -348,6 +424,19 @@ def main():
                     evidence['numericResumePassed'] = (resumed.returncode == 0 and '已恢复会话：' in resumed.stdout
                                                        and before_resume == checkpoints[0].read_bytes())
                     evidence['passed'] = evidence['passed'] and evidence['numericResumePassed']
+            if options.escape:
+                screen = evidence.get('screen', '')
+                expected_last = (['历史提问一', THIRD] if case in ('rewind', 'model-rewind') else
+                                 [THIRD] if case == 'idle' else [SECOND, THIRD] if case in ('approval', 'tool') else [THIRD, THIRD])
+                evidence['passed'] = (child.returncode == 0 and evidence.get('exitCode') == 0 and not server.errors
+                                      and len(user_rows) == (1 if case in ('idle', 'rewind') else 2)
+                                      and user_rows[-1] == expected_last and approved == []
+                                      and '已完成中文任务。' in screen and '不应发送的草稿' not in str(user_rows)
+                                      and evidence.get('initialConsoleModes') == evidence.get('finalConsoleModes'))
+                if case not in ('idle', 'rewind'):
+                    evidence['passed'] = evidence['passed'] and 'CANCELLED' in evidence.get('cancelledSnapshots', []) and evidence.get('cancelLatencyMs', 25000) < 5000
+                if case in ('rewind', 'model-rewind'):
+                    evidence['passed'] = evidence['passed'] and evidence.get('originalPreserved', False) and len(checkpoints) == 2
             results.append(evidence)
     report = {'status': 'PASS' if all(row['passed'] for row in results) else 'FAIL', 'launcher': str(options.launcher),
               'windowsACP': ctypes.windll.kernel32.GetACP(),

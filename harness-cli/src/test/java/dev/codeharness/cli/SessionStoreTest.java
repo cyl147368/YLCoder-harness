@@ -36,6 +36,45 @@ class SessionStoreTest {
         assertEquals("second", store.load("session").transcript().getFirst().content());
     }
 
+    @Test void ordinaryGitCleanPreservesActiveSessionAndLockWithoutChangingProjectIgnoreFile() throws Exception {
+        Path root = workspace();
+        git(root, "init", "--quiet");
+        Path projectIgnore = Files.writeString(root.resolve(".gitignore"), "project-build/\n");
+        SessionStore store = new SessionStore(root);
+        save(store, "before cleanup");
+        Files.writeString(root.resolve("disposable.txt"), "isolated test fixture");
+        try (SessionStore.Lease ignored = store.lock("session")) {
+            assertFalse(git(root, "status", "--short", "--untracked-files=all").contains(".harness"));
+            String preview = git(root, "clean", "-nd");
+            assertTrue(preview.contains("disposable.txt"), preview);
+            assertFalse(preview.contains(".harness"), preview);
+            // 根忽略文件也属于夹具的未跟踪文件；只在清理前验证其原始内容未被改动。
+            assertEquals("project-build/\n", Files.readString(projectIgnore));
+            git(root, "clean", "-fd");
+            assertFalse(Files.exists(root.resolve("disposable.txt")));
+            assertTrue(Files.exists(checkpoint(root)));
+            assertThrows(IOException.class, () -> new SessionStore(root).lock("session"));
+            save(store, "after cleanup");
+        }
+        assertEquals("after cleanup", store.load("session").transcript().getFirst().content());
+        assertTrue(git(root, "status", "--short", "--untracked-files=all").isBlank());
+    }
+
+    @Test void existingSessionIgnoreIsPreservedAndMissingDirectoryIsNotReportedAsJunction() throws Exception {
+        Path root = workspace();
+        SessionStore store = new SessionStore(root);
+        Path directory = root.resolve(".harness/sessions");
+        Path ignore = directory.resolve(".gitignore");
+        Files.writeString(ignore, "# existing rules\n*\n");
+        new SessionStore(root);
+        assertEquals("# existing rules\n*\n", Files.readString(ignore));
+        Files.delete(ignore);
+        Files.delete(directory);
+        IOException missing = assertThrows(IOException.class, () -> save(store, "cannot save"));
+        assertTrue(missing.getMessage().contains("不存在"));
+        assertFalse(missing.getMessage().contains("junction"));
+    }
+
     @Test void lockPreventsOtherStoresAndThreadsFromSaving() throws Exception {
         Path root = workspace();
         SessionStore store = new SessionStore(root), other = new SessionStore(root);
@@ -196,6 +235,7 @@ class SessionStoreTest {
         SessionStore store = new SessionStore(root);
         Path outside = Files.createDirectory(temporary.resolve("external-sessions"));
         Path directory = root.resolve(".harness/sessions");
+        Files.delete(directory.resolve(".gitignore"));
         Files.delete(directory);
         createJunction(directory, outside);
         try {
@@ -236,6 +276,21 @@ class SessionStoreTest {
         assertEquals("rwx------", PosixFilePermissions.toString(Files.getPosixFilePermissions(state.resolve("sessions"))));
         assertEquals("rw-------", PosixFilePermissions.toString(Files.getPosixFilePermissions(checkpoint(root))));
         assertEquals("rw-------", PosixFilePermissions.toString(Files.getPosixFilePermissions(state.resolve("sessions/session.lock"))));
+    }
+
+    private static String git(Path root, String... args) throws Exception {
+        var command = new java.util.ArrayList<>(List.of("git", "-c", "init.templateDir="));
+        command.addAll(List.of(args));
+        var builder = new ProcessBuilder(command).directory(root.toFile()).redirectErrorStream(true);
+        builder.environment().keySet().removeIf(name -> name.toUpperCase(Locale.ROOT).startsWith("GIT_"));
+        builder.environment().put("GIT_CONFIG_NOSYSTEM", "1");
+        builder.environment().put("GIT_CONFIG_GLOBAL", windows() ? "NUL" : "/dev/null");
+        Process process;
+        try { process = builder.start(); }
+        catch (IOException missing) { assumeTrue(false, "本机未安装 Git"); return ""; }
+        String output = new String(process.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        assertEquals(0, process.waitFor(), output);
+        return output;
     }
 
     private static void createJunction(Path junction, Path target) throws Exception {

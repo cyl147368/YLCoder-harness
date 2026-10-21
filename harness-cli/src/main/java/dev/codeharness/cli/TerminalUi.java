@@ -14,7 +14,8 @@ final class TerminalUi implements AutoCloseable {
     private static final ObjectMapper JSON = new ObjectMapper();
     private final PrintWriter out;
     private final PrintWriter err;
-    private final boolean color;
+    private boolean color;
+    private boolean webEnabled;
     private boolean answerStarted;
     private boolean progressStarted;
     private boolean showProgress = true;
@@ -59,11 +60,20 @@ final class TerminalUi implements AutoCloseable {
         out.println("  " + style("1;36", "ylc") + "  " + style("90", "YLCoder-harness · " + brief(safe(workspace.toString()), 48)));
         out.println("  " + style("36", "/project") + "  " + style("36", "/status") + "  "
                 + style("36", "/resume") + "  " + style("36", "/help") + "  " + style("36", "/exit"));
+        out.println("  " + style("90", "Esc 停下 · Esc Esc 回退对话 · Tab 补全"));
         out.println();
         out.flush();
     }
 
-    void openBottom(boolean allowed) { bottom = BottomStatusBar.open(err, allowed); }
+    void openBottom(boolean allowed) {
+        bottom = BottomStatusBar.open(err, allowed);
+        // 传统 Windows 控制台在底栏初始化时已启用 VT，也可以安全使用颜色。
+        color = color || bottom.active();
+    }
+
+    void web(boolean enabled) { webEnabled = enabled; }
+
+    String inputPrompt() { return "  " + style("1;36", "你 › "); }
 
     synchronized void beforeOutput() {
         if (bottom != null && bottom.active()) {
@@ -98,7 +108,7 @@ final class TerminalUi implements AutoCloseable {
         if (bottom != null && bottom.active()) {
             out.flush();
             err.flush();
-            bottom.update(bottomLines());
+            bottom.update(bottomLines(), color);
         }
     }
 
@@ -107,7 +117,7 @@ final class TerminalUi implements AutoCloseable {
     synchronized void prompt(boolean showPrompt) {
         refreshBottom();
         if (bottom == null || !bottom.active()) compact(out, "状态");
-        if (showPrompt) out.print(style("1;36", "› "));
+        if (showPrompt) out.print(inputPrompt());
         out.flush();
     }
 
@@ -124,6 +134,8 @@ final class TerminalUi implements AutoCloseable {
         out.println("  /status   查看连接、工作区、进程累计用量和完整会话 ID");
         out.println("  /resume   列出历史会话；/resume 序号或会话ID 切换后继续输入任务");
         out.println("  /history  查看最近历史；/history 页码 翻页，/history all 查看全部");
+        out.println("  /rewind   选择回退点；/rewind 序号 回到该提问之前，保留原会话（不撤销文件）");
+        out.println("  Esc       取消当前任务但保留会话；输入时清空草稿；500 毫秒内连按两次打开回退选择");
         out.println("  Tab       补全斜杠命令及参数；支持方向键编辑输入");
         out.println("  /stream   查看流式状态；/stream off 关闭，/stream on 开启");
         out.println("  /help     显示帮助");
@@ -152,6 +164,7 @@ final class TerminalUi implements AutoCloseable {
                     case "FAILED" -> "未完成";
                     case "RUNNING" -> "运行中或已中断";
                     case "CANCELLED" -> "已取消";
+                    case "READY" -> "等待输入";
                     case "MAX_ITERATIONS" -> "达到调用上限";
                     default -> safe(session.status());
                 };
@@ -198,6 +211,7 @@ final class TerminalUi implements AutoCloseable {
         out.println();
         field(out, "工作区", safe(workspace.toString()));
         field(out, "会话", safe(session) + (saved ? "（已保存）" : "（尚未提交任务）"));
+        field(out, "联网", webEnabled ? "已开启 · 搜索与网页读取" : "已关闭");
         if (saved) out.println("  继续会话：ylc resume " + safe(session));
         section(out, "进程累计");
         usage(out, process);
@@ -255,6 +269,8 @@ final class TerminalUi implements AutoCloseable {
             case "edit_file" -> "编辑文件";
             case "changes" -> "检查变更";
             case "run_command" -> "执行命令";
+            case "web_search" -> "联网搜索";
+            case "web_fetch" -> "读取网页";
             default -> "调用工具 " + safe(call.name());
         };
         String path = "";
@@ -292,11 +308,10 @@ final class TerminalUi implements AutoCloseable {
         beforeOutput();
         if (answerStarted) return;
         if (progressStarted) {
-            err.printf("  %s %s%n", style("32", "✓"), style("32", activity + " · " + step + " 次" + (tools == 0 ? "" : "工具") + " · "
-                    + String.format(Locale.ROOT, "%.1f 秒", (System.nanoTime() - taskStarted) / 1_000_000_000.0)));
-            err.println();
             err.flush();
         }
+        out.println();
+        out.println("  " + style("1;35", "◆ YLCoder") + "  " + style("90", "────────────────────"));
         out.println();
         out.flush();
         answerStarted = true;
@@ -322,6 +337,8 @@ final class TerminalUi implements AutoCloseable {
             String rate = cacheRate(task, true);
             out.println("  " + style("90", status + " · ↑" + input + " ↓" + output + " · 缓存 " + rate + " · "
                     + String.format(Locale.ROOT, "%.1f 秒", elapsedSeconds)));
+            out.println();
+            out.flush();
             return;
         }
         compact(err, status);
@@ -344,7 +361,7 @@ final class TerminalUi implements AutoCloseable {
                 "  本轮  输入 token " + compactAmount(currentTask.total().inputTokens(), currentTask.inputReportedRequests(), currentTask.requests())
                         + " · 输出 token " + compactAmount(currentTask.total().outputTokens(), currentTask.outputReportedRequests(), currentTask.requests()),
                 "  缓存 token " + cached + " · 缓存命中率 " + rate,
-                "  " + activity + " · " + mainRequests + "次主模型/" + currentReview.requests() + "次审核 · "
+                "  ● " + activity + " · 联网" + (webEnabled ? "开" : "关") + " · " + mainRequests + "次主模型/" + currentReview.requests() + "次审核 · "
                         + (tools == 0 ? "未调用工具" : tools + "次工具") + String.format(Locale.ROOT, " · %.1f 秒", seconds) + review);
     }
 
@@ -369,7 +386,8 @@ final class TerminalUi implements AutoCloseable {
     private void compact(PrintWriter writer, String title) {
         writer.println();
         writer.println("  " + style("36", title));
-        bottomLines().forEach(writer::println);
+        var lines = bottomLines();
+        for (int index = 0; index < lines.size(); index++) writer.println(BottomStatusBar.paintLine(lines.get(index), index, color));
         writer.println();
         writer.flush();
     }

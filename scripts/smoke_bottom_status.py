@@ -230,6 +230,13 @@ def console_child(options):
                 'footerHeight': height - footer_start,
                 'body': '\n'.join(lines[:footer_start]), 'footer': '\n'.join(lines[footer_start:]),
                 'screen': '\n'.join(lines)}
+        result['footerColors'] = sorted({cell.attributes & 0x000f
+            for cell in cells[footer_start * width:] if cell.character.unicode.strip()})
+        # 保存实际控制台单元格，便于渲染可核对的样式预览；不是产品模拟输出。
+        if full_buffer:
+            result['visibleCells'] = [[{'text': cell.character.unicode, 'color': cell.attributes & 0x000f,
+                                       'trailing': bool(cell.attributes & 0x0200)}
+                for cell in cells[row * width:(row + 1) * width]] for row in range(height)]
         if full_buffer:
             buffer_width, buffer_height = info.size.X, info.size.Y
             buffer_cells = (Cell * (buffer_width * buffer_height))()
@@ -340,9 +347,10 @@ def console_child(options):
         evidence['historyLinesVerified'] = options.answer_lines
 
     try:
-        await_screen(lambda row: has_footer(row) and '›' in row['body'].splitlines(), '初始底栏')
+        await_screen(lambda row: has_footer(row) and any(line.strip() == '你 ›' for line in row['body'].splitlines()), '初始底栏')
         initial = persist_snapshot('initial')
         assert '尚无请求' in initial['footer'], initial
+        assert len(initial['footerColors']) >= 4, '底栏应分色显示模型、输入输出和状态'
         assert initial['body'].splitlines()[-1].strip() == '─' * (initial['viewportWidth'] - 3), initial
         type_line(FIRST)
         ready = workspace / 'first-request.ready'
@@ -380,11 +388,11 @@ def console_child(options):
             assert_second_progress_retained(approval)
             type_line('y')
             await_screen(lambda row: SECOND_END in row['body'] and has_footer(row)
-                         and '›' in row['body'].splitlines(), '第二个任务完成后的底栏')
+                         and any(line.strip() == '你 ›' for line in row['body'].splitlines()), '第二个任务完成后的底栏')
             completed = persist_snapshot('secondTask')
             second_body = assert_second_progress_retained(completed)
             assert SECOND_END in second_body, ('正文被清除：第二任务回复内容缺失', second_body)
-            assert SECOND_END in second_body.splitlines(), '短回复尾部不能残留旧底栏文字'
+            assert '  ' + SECOND_END in second_body.splitlines(), '短回复尾部不能残留旧底栏文字'
             assert '  ' + COMMAND in second_body.splitlines(), '审批命令尾部不能混入底栏字段'
         type_line('/exit')
         evidence['exitCode'] = process.wait(timeout=10)

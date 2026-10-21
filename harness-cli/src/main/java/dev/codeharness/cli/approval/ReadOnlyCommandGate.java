@@ -19,7 +19,7 @@ import java.util.Optional;
 import java.util.HexFormat;
 import java.util.ArrayList;
 
-/** 严格把目录、Git 分支及状态查询翻译为固定参数；从不执行用户提供的 shell 文本。 */
+/** 严格把目录、时间、Git 分支及状态查询翻译为固定参数；从不执行用户提供的 shell 文本。 */
 final class ReadOnlyCommandGate {
     record FileIdentity(Path path, Object key, long size, FileTime modified) {}
     record Plan(Path workspace, String command, List<String> arguments, FileIdentity executable, Object workspaceKey,
@@ -36,7 +36,7 @@ final class ReadOnlyCommandGate {
     }
 
     Check check(CommandApproval.Request request) {
-        Check outside = Check.rejected("此命令不在低风险自动审核范围内");
+        Check outside = Check.rejected("本地规则未能生成受限执行计划，尚未调用审核 AI");
         try {
             String command = request.command();
             // 整个命令必须精确匹配；不做拆词、变量展开或危险片段删除。
@@ -48,7 +48,18 @@ final class ReadOnlyCommandGate {
             boolean git = command.startsWith("git ");
             GitPlan gitPlan = git ? gitArguments(workspace, command) : null;
             List<String> arguments = git ? gitPlan == null ? null : gitPlan.arguments()
-                    : isWindows() ? windowsArguments(command) : unixArguments(command);
+                    : timeArguments(command);
+            if (!git && arguments == null) {
+                List<String> flags = ReadOnlyQuery.ripgrep(command);
+                Path rg = flags == null ? null : installedTool(workspace, "rg");
+                if (rg != null) {
+                    var query = new ArrayList<String>();
+                    query.add(rg.toString());
+                    query.addAll(flags);
+                    arguments = query;
+                }
+            }
+            if (!git && arguments == null) arguments = isWindows() ? windowsArguments(command) : unixArguments(command);
             if (arguments == null) return outside;
             Path executable = Path.of(arguments.getFirst()).toRealPath();
             if (executable.startsWith(workspace) || !Files.isRegularFile(executable, LinkOption.NOFOLLOW_LINKS))
@@ -72,6 +83,23 @@ final class ReadOnlyCommandGate {
 
     private static boolean isWindows() {
         return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
+    }
+
+    /** 时间查询只允许固定格式，并改为直接启动可信系统程序，不执行原始 shell 文本。 */
+    private static List<String> timeArguments(String command) {
+        TimeQuery.Query query = TimeQuery.parse(command);
+        if (query == null) return null;
+        if (isWindows()) {
+            Path system = windowsSystemDirectory();
+            if (system == null) return null;
+            Path executable = system.resolve("WindowsPowerShell/v1.0/powershell.exe");
+            return List.of(executable.toString(), "-NoLogo", "-NoProfile", "-NonInteractive", "-Command",
+                    "[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); " + query.windowsExpression());
+        }
+        if (query.powerShell()) return null;
+        Path executable = Files.isExecutable(Path.of("/bin/date")) ? Path.of("/bin/date") : Path.of("/usr/bin/date");
+        if (!Files.isExecutable(executable)) return null;
+        return query.dateFormat().isEmpty() ? List.of(executable.toString()) : List.of(executable.toString(), query.dateFormat());
     }
 
     private static Object identity(Path path, BasicFileAttributes attributes) throws IOException {
@@ -98,11 +126,16 @@ final class ReadOnlyCommandGate {
             default -> null;
         };
         if (builtin == null) return null;
+        Path system = windowsSystemDirectory();
+        if (system == null) return null;
+        Path executable = system.resolve("cmd.exe");
+        return List.of(executable.toString(), "/d", "/s", "/c", builtin);
+    }
+
+    private static Path windowsSystemDirectory() {
         char[] path = new char[32768];
         int length = WindowsSystem.INSTANCE.GetSystemDirectoryW(path, path.length);
-        if (length <= 0 || length >= path.length) return null;
-        Path executable = Path.of(new String(path, 0, length)).resolve("cmd.exe");
-        return List.of(executable.toString(), "/d", "/s", "/c", builtin);
+        return length <= 0 || length >= path.length ? null : Path.of(new String(path, 0, length));
     }
 
     private static List<String> unixArguments(String command) {
@@ -128,15 +161,7 @@ final class ReadOnlyCommandGate {
     }
 
     private static GitPlan gitArguments(Path workspace, String command) throws IOException {
-        List<String> operation = switch (command) {
-            case "git branch --show-current" -> List.of("branch", "--show-current");
-            case "git status" -> List.of("status");
-            case "git status --short", "git status -s" -> List.of("status", "--short");
-            case "git status --porcelain", "git status --porcelain=v1" -> List.of("status", "--porcelain=v1");
-            case "git status --porcelain=v2" -> List.of("status", "--porcelain=v2");
-            case "git status -sb", "git status --short --branch", "git status --branch --short" -> List.of("status", "--short", "--branch");
-            default -> null;
-        };
+        List<String> operation = ReadOnlyQuery.git(command);
         if (operation == null) return null;
         Path gitDirectory = workspace.resolve(".git");
         if (!Files.isDirectory(gitDirectory, LinkOption.NOFOLLOW_LINKS) || !gitDirectory.toRealPath().equals(gitDirectory)
@@ -155,7 +180,7 @@ final class ReadOnlyCommandGate {
         Path git = installedGit(workspace);
         if (git == null) return null;
         boolean status = operation.getFirst().equals("status");
-        String configuration = status ? GitStatusConfig.fingerprint(gitDirectory) : "";
+        String configuration = status || operation.getFirst().equals("clean") ? GitStatusConfig.fingerprint(gitDirectory) : "";
         var arguments = new ArrayList<String>();
         arguments.add(git.toString());
         arguments.addAll(List.of("--no-pager", "--no-optional-locks", "--git-dir=" + gitDirectory,
@@ -168,6 +193,10 @@ final class ReadOnlyCommandGate {
     }
 
     static Path installedGit(Path workspace) {
+        return installedTool(workspace, "git");
+    }
+
+    private static Path installedTool(Path workspace, String name) {
         String search = System.getenv("PATH");
         if (search == null) return null;
         for (String value : search.split(java.util.regex.Pattern.quote(java.io.File.pathSeparator))) {
@@ -177,7 +206,7 @@ final class ReadOnlyCommandGate {
                 if (value.startsWith("\"") && value.endsWith("\"")) value = value.substring(1, value.length() - 1);
                 Path directory = Path.of(value);
                 if (!directory.isAbsolute()) continue;
-                Path executable = directory.resolve(isWindows() ? "git.exe" : "git");
+                Path executable = directory.resolve(isWindows() ? name + ".exe" : name);
                 if (!Files.isRegularFile(executable) || !Files.isExecutable(executable)) continue;
                 Path canonical = executable.toRealPath();
                 if (!canonical.startsWith(workspace.toRealPath())) return canonical;

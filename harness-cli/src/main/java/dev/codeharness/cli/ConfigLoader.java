@@ -34,8 +34,8 @@ public final class ConfigLoader {
             throw new IOException("YAML 配置无效或包含不支持的字段；请参阅 config.example.yaml");
         }
         if (config == null) throw new IOException("配置文件为空：" + selected);
-        if (config.agent == null || config.permissions == null || config.headerEnv == null || config.mcp == null) {
-            throw new IOException("agent、permissions、header-env 和 mcp 不能为 null");
+        if (config.agent == null || config.permissions == null || config.headerEnv == null || config.mcp == null || config.web == null) {
+            throw new IOException("agent、permissions、header-env、mcp 和 web 不能为 null");
         }
         if (config.timeoutSeconds < 1) throw new IOException("timeout-seconds 必须为正数");
         if (config.permissions.reviewTimeoutSeconds < 1 || config.permissions.reviewTimeoutSeconds > 30
@@ -55,6 +55,7 @@ public final class ConfigLoader {
             throw new IOException("智能体限制无效：迭代次数和输出上限须为正数，context >= 64，工具输出 >= 128");
         }
         validateMcp(config.mcp);
+        dev.codeharness.cli.web.WebTools.validate(config.web);
         return config;
     }
 

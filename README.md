@@ -1,5 +1,9 @@
 # YLCoder-harness
 
+内置联网搜索 `web_search` 和网页读取 `web_fetch`，适用于最新新闻、官方文档、版本与报错查询。默认无需额外搜索密钥：使用 Bing RSS，失败时尝试 DuckDuckGo；也可通过 `web.provider: searxng` 与 `web.search-url` 指定自建搜索服务。`ylc --no-web` 可关闭联网工具，已有模型厂商配置无需修改。
+
+交互界面用青色“你 ›”标记提问、紫色“◆ YLCoder”标记回答；底栏按模型、输入/输出、缓存和执行状态分色，保留终端原生滚动历史。`--no-color` 或 `NO_COLOR` 可使用纯文本。
+
 这是一个基于 Java 21 的编程智能体，提供 CLI、可恢复的对话、多种模型协议和受限的工作区工具。已验证结果、复验命令和已知限制见[验证记录](docs/VERIFICATION.md)。
 
 项目名称为 **YLCoder-harness**，日常启动命令为 **`ylc`**。已有用户配置 `~/.code-harness/config.yaml` 和项目会话目录 `.harness` 保持兼容，无需迁移密钥或会话。Java 包名及 Maven 子模块名保留，以兼容现有扩展。
@@ -77,6 +81,8 @@ ylc doctor
 
 交互中按一次 `Ctrl+C` 中断当前任务并退出，也适用于等待输入、模型响应和命令审批。程序保留可恢复的检查点、释放会话锁并恢复终端，返回退出码 `130`；未提交的输入和不完整的流式回复不会作为完整消息保存。重新启动后可用 `/resume`、`/resume 1` 恢复。`python scripts/smoke_console_input.py --interrupt` 使用 localhost 夹具和真实 Windows 控制台键盘事件验证这些行为。
 
+按 `Esc` 取消当前任务但保留交互会话，空闲时清空输入草稿；在 500 毫秒内连按两次 `Esc` 打开历史回退选择，输入编号后回到该提问之前。也可输入 `/rewind` 或 `/rewind 序号`。回退创建新的持久化会话分支，保留原会话及完整工具记录，不请求模型、不重放工具、不撤销实际文件修改。回退点来自当前保留的上下文，已被上下文压缩删除的旧轮次不在列表中。按键需要正常 JLine 交互终端；管道或 `TERM=dumb` 可使用 `/rewind`。`python scripts/smoke_console_input.py --escape` 验证真实 Windows 控制台中的取消、继续输入和回退。
+
 ## 配置
 
 使用 [config.example.yaml](config.example.yaml)。配置优先级依次为显式 `--config`、`~/.code-harness/config.yaml`、默认值。仓库内的 `.harness/config.yaml` 默认被忽略；提供 `--trust-project-config` 后才会读取，而且优先于用户配置。显式 `--config` 和 `--trust-project-config` 授权配置文件选择端点、凭据变量和命令策略，因此使用前请审阅文件。CLI 参数覆盖已加载的配置项；工作区始终由调用目录或显式 `--workspace` 决定，不读取 YAML 的旧 `workspace` 值。相对工作区路径和显式配置路径以调用目录为基准。未知 YAML 键会被拒绝。
@@ -114,6 +120,10 @@ CodeGo 仅用于已归档的真实验证。[configs/codego.example.yaml](configs
 
 审核失败、超时、答复不明确或达到次数上限时，交互终端回到 `y/N`；管道模式拒绝该操作，不会把下一条任务当作审批回答。同一任务内通过的完全相同工作区、命令和执行计划可复用审核结果；下一任务或新进程恢复会重新审核，手动批准也不会扩大后续权限。`ylc --no-auto-review` 或可信配置中的 `permissions.auto-review: false` 可恢复逐项手动审批。显式 `--allow-commands` / `permissions.allow-commands: true` 仍会预先批准所有命令，并优先于自动审核开关。
 
+固定格式的 `date` 时间查询和 Windows `Get-Date`（包括 `powershell -NoProfile -Command "Get-Date -Format 'yyyy-MM-dd HH:mm:ss zzz'"`）也会进入 AI 审核，通过后直接执行。Windows 将这些时间查询转换为固定的 .NET 只读表达式；POSIX 使用系统 `date` 绝对路径及独立参数，均不执行模型提供的原始 shell 文本。支持的格式见[使用手册](使用手册.md)。前置规则未通过时会明确提示“尚未调用审核 AI”，避免与 AI 审核结论混淆。
+
+支持组合 Git 状态的只读选项，例如 `git status --short --branch --untracked-files=all`；`git clean -nd` / `git clean --dry-run -d` 预览也可经 AI 批准后执行，实际删除的 `git clean -fd` 仍需确认。安装了工作区外部的 ripgrep 时，`rg --files --hidden -g AGENTS.md -g '!.git'` 等文件名查询也会进入 AI 审核；固定禁用 rg 配置、不跟随链接，并排除 `.git` 与 `.harness`。不开放任意 rg 参数、外部路径或 shell 拼接。
+
 每次审核也是一次可能付费的模型请求。默认每项任务最多审核 8 次、每次最多等待 10 秒、输出上限为 96 tokens；次数和超时分别由 `permissions.max-auto-reviews`（1～32）与 `permissions.review-timeout-seconds`（1～30）控制，不占主智能体的 `agent.max-iterations`。审核用量单列在 `review` 统计中，顶层 `usage` 包含主智能体和审核已报告的用量；缺失用量不表示免费。`--quiet` 隐藏普通审核进度，仍显示需要人工确认的原因与提示。
 
 命令在工作区启动，但拥有当前用户的文件系统和网络权限；自动审核不是操作系统沙箱。文件工具会强制检查规范工作区包含关系。命令有超时、有界输出，并尽力清理子孙进程。执行不可信代码时，应使用隔离的操作系统或容器环境。
@@ -121,6 +131,8 @@ CodeGo 仅用于已归档的真实验证。[configs/codego.example.yaml](configs
 任务输入和 shell/MCP 手动权限答复使用同一个输入读取器。真实控制台使用同一个控制台读取器处理两者；管道任务输入不会授予权限，也不会把下一项任务当作审批答复。审批提示写到 stderr，以保持 stdout 的 JSON 输出完整。手动审批时，EOF 或 `y`/`yes` 以外的任何回答都会拒绝操作。
 
 会话保存在 `<workspace>/.harness/sessions`，其中包含提示词、代码片段、工具输出和不透明的厂商元数据。请保护该目录，并避免纳入版本控制。会话写入使用锁和原子替换。中断后，未知的工具效果会报告给模型供其检查，不会自动重放工具。检查点支持进程中断恢复，但不承诺断电后的持久性。
+
+程序在会话目录内创建 `.gitignore`，默认排除所有会话及锁文件，让普通 `git clean -fd` 保留当前会话；不会修改项目根 `.gitignore`，已有会话忽略文件保持原样。已跟踪的会话文件不受忽略规则影响，`git clean -fdx` 等强制清理也能删除忽略文件。若目录被外部删除或变得不可写，交互模式会报告保存失败、保留内存历史并暂停新任务，可用 `/history all` 查看；保留需要的内容后退出重启，不会静默重建旧锁或重放工具。
 
 可信配置可启动 MCP 可执行文件及参数列表，不会隐式使用 shell。外部调用需逐次审批或提供 `--allow-mcp-tools`；shell 授权不会授予此权限。外部进程具有宿主权限，并在 CLI 调用结束后关闭。MCP 支持 stdio 上受限的工具发现与调用；尚未实现 HTTP 传输和其他 MCP 能力。
 

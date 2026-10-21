@@ -60,7 +60,22 @@ public final class SessionStore {
         directory = state.resolve("sessions");
         verifyDirectory(state);
         ensurePrivateDirectory(directory);
+        ensureIgnoreFile();
         this.workspace = root.toString();
+    }
+
+    /** 会话和锁不应成为 git clean -fd 的目标；不改动项目根目录的忽略规则。 */
+    private void ensureIgnoreFile() throws IOException {
+        Path ignore = directory.resolve(".gitignore");
+        try (var channel = FileChannel.open(ignore, Set.of(StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE,
+                LinkOption.NOFOLLOW_LINKS), privateAttributes(directory, false));
+             var output = java.nio.channels.Channels.newOutputStream(channel)) {
+            output.write("# YLCoder 本地会话及锁文件，不纳入 Git 清理或版本控制。\n*\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        } catch (FileAlreadyExistsException existing) {
+            // 尊重已有普通忽略文件，禁止跟随重定向写入外部文件。
+            if (!Files.isRegularFile(ignore, LinkOption.NOFOLLOW_LINKS) || !ignore.toRealPath().equals(ignore))
+                throw new IOException("会话忽略文件必须是普通文件");
+        }
     }
 
     public record Session(int version, String id, String workspace, String provider, String model,
@@ -199,8 +214,11 @@ public final class SessionStore {
     }
 
     private static void verifyDirectory(Path path) throws IOException {
-        if (Files.isSymbolicLink(path) || !Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)
-                || !path.toRealPath().equals(path)) throw new IOException("会话目录不能通过链接或 junction 重定向");
+        if (Files.notExists(path, LinkOption.NOFOLLOW_LINKS))
+            throw new IOException("会话目录已被删除或不存在");
+        if (Files.isSymbolicLink(path) || !path.toRealPath().equals(path))
+            throw new IOException("会话目录不能通过链接或 junction 重定向");
+        if (!Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) throw new IOException("会话路径不是目录");
     }
 
     private static void ensurePrivateDirectory(Path path) throws IOException {

@@ -381,7 +381,7 @@ public final class WorkspaceTools {
     }
 
     private final class RunCommand implements Tool {
-        public ToolDefinition definition() { return WorkspaceTools.this.definition("run_command", "在工作区中执行命令。简单只读检查可由审核子 agent 批准后直接执行；其他命令需要确认。设有超时和输出限制，不是操作系统沙箱。", Map.of("command", stringProp("要执行的命令行")), "command"); }
+        public ToolDefinition definition() { return WorkspaceTools.this.definition("run_command", "在工作区中执行命令。目录/时间只读查询及安全 Git 检查可由 AI 审核子 agent 审核后直接执行；未知或有副作用的命令仍需确认。设有超时和输出限制，不是操作系统沙箱。", Map.of("command", stringProp("要执行的命令行")), "command"); }
         public String execute(String input) throws Exception {
             String command = required(args(input), "command").trim();
             if (command.isEmpty()) throw new IllegalArgumentException("command 不能为空");

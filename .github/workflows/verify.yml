@@ -41,6 +41,8 @@ jobs:
         run: mvn -B verify
       - name: 使用本地模拟厂商验证打包 CLI
         run: python scripts/smoke_cli.py
+      - name: 验证联网搜索、缓存与关闭开关（仅 localhost）
+        run: python -X utf8 scripts/smoke_web.py
       - name: 验证打包流式输出和 JSON
         run: python scripts/smoke_streaming.py
       - name: 验证原生 Chat Completions 流式输出和工具完成
@@ -97,6 +99,8 @@ jobs:
         run: python scripts/smoke_console_input.py --completion --result target/windows-completion-history.json
       - name: 验证 Ctrl+C 退出、取消检查点和终端恢复
         run: python scripts/smoke_console_input.py --interrupt --result target/windows-ctrl-c.json
+      - name: 验证 Esc 取消后继续、双 Esc 回退分支和原会话保留
+        run: python scripts/smoke_console_input.py --escape --result target/windows-escape.json
       - name: 测量合成上下文保留与分词
         run: java -cp harness-cli/target/harness-cli-0.1.0-SNAPSHOT-all.jar dev.codeharness.cli.bench.ContextBenchmark
       - name: 验证本地分词器上下文保留
