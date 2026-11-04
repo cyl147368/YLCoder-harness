@@ -22,6 +22,7 @@ final class OpenAiChatStream {
     private static final int TEXT_LIMIT = 1_048_576;
     private static final int ARGUMENT_LIMIT = 4_194_304;
     private final Consumer<String> observer;
+    private final ProviderErrors errors;
     private final StringBuilder text = new StringBuilder();
     private final TreeMap<Integer, Call> calls = new TreeMap<>();
     private int argumentChars;
@@ -31,7 +32,11 @@ final class OpenAiChatStream {
     private TokenUsage usage = TokenUsage.ZERO;
     private java.util.Map<String, String> usageMetadata = UsageReporting.metadata(false, false, false);
 
-    OpenAiChatStream(Consumer<String> observer) { this.observer = observer == null ? ignored -> {} : observer; }
+    OpenAiChatStream(Consumer<String> observer) { this(observer, new ProviderErrors(null)); }
+    OpenAiChatStream(Consumer<String> observer, ProviderErrors errors) {
+        this.observer = observer == null ? ignored -> {} : observer;
+        this.errors = errors;
+    }
 
     boolean onEvent(String event) {
         if (done) throw failure("在 DONE 之后仍含数据");
@@ -42,11 +47,11 @@ final class OpenAiChatStream {
         }
         JsonNode chunk = parse(event);
         if (chunk.isObject() && chunk.hasNonNull("error")) {
-            // 网关错误正文可能含凭据或请求片段，只报告类型，不回显上游原文。
+            String detail = errors.detail(chunk);
             if (requestError(chunk.get("error"))) {
-                throw failure("厂商拒绝请求，请检查权限、额度、限流或请求配置");
+                throw failure("厂商拒绝请求，请检查权限、额度、限流或请求配置" + detail);
             }
-            throw ProviderException.streamFailure("Chat 流：厂商在流中返回错误，未收到完整回复");
+            throw ProviderException.streamFailure("Chat 流：厂商在流中返回错误，未收到完整回复" + detail);
         }
         if (chunk.isObject() && chunk.path("type").asText().startsWith("response.")) {
             throw ProviderException.streamFailure("Chat 流：厂商返回了 Responses 事件，与 Chat Completions 协议不匹配");
@@ -180,7 +185,7 @@ final class OpenAiChatStream {
 
     private static ProviderException failure(String message) { return new ProviderException("Chat 流：" + message); }
 
-    /** 明确的客户端错误不会因改成非流式而消失；不分析或回显自由文本错误正文。 */
+    /** 明确的客户端错误不会因改成非流式而消失；只根据结构化错误码判断。 */
     private static boolean requestError(JsonNode error) {
         var codes = java.util.Set.of("invalid_api_key", "authentication_error", "permission_error", "permission_denied",
                 "insufficient_quota", "rate_limit_exceeded", "rate_limit_error", "invalid_request_error",

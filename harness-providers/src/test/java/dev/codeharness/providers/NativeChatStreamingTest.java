@@ -133,7 +133,7 @@ class NativeChatStreamingTest {
                 List.of(chunk("{}", "stop")),
                 List.of(callChunk(), chunk("{}", "tool_calls")),
                 List.of(chunk("{}", "invented-secret-marker"), "[DONE]"),
-                List.of("{\"error\":{\"message\":\"secret-server-error\"}}"),
+                List.of("{\"error\":{\"message\":\"服务暂不可用 default-secret\"}}"),
                 List.of("secret-malformed-json", "[DONE]"),
                 List.of("{\"choices\":\"secret-invalid-shape\"}", "[DONE]"),
                 List.of(chunk("{\"function_call\":{\"name\":\"old_api\"}}", "stop"), "[DONE]"),
@@ -185,8 +185,25 @@ class NativeChatStreamingTest {
         assertTimeoutPreemptively(Duration.ofSeconds(3), () -> {
             var error = assertThrows(ProviderException.class, () -> model.complete(request(), delta -> {}));
             assertNull(error.getCause());
+            assertTrue(error.streamFallbackSuggested());
+            assertTrue(error.getMessage().contains("超时"));
         });
         assertEquals(0, headers.getCount());
+    }
+
+    @Test void 错误正文超时仍保留HTTP状态和降级标志() throws Exception {
+        start(exchange -> {
+            exchange.sendResponseHeaders(400, 0);
+            exchange.getResponseBody().flush();
+            release.await(5, TimeUnit.SECONDS);
+        });
+        var model = model("openai-compatible", Duration.ofMillis(500), Map.of());
+        assertTimeoutPreemptively(Duration.ofSeconds(3), () -> {
+            var failure = assertThrows(ProviderException.class, () -> model.complete(request(), delta -> {}));
+            assertEquals(400, failure.statusCode());
+            assertTrue(failure.streamFallbackSuggested());
+            assertTrue(failure.getMessage().contains("详情读取未完成"));
+        });
     }
 
     @Test void cumulativeSseBytesAreBoundedEvenForIgnoredComments() throws Exception {
@@ -218,6 +235,7 @@ class NativeChatStreamingTest {
             assertInstanceOf(ProviderException.class, error.get());
             assertEquals(Boolean.TRUE, interrupted.get());
             assertNull(error.get().getCause());
+            assertFalse(((ProviderException) error.get()).streamFallbackSuggested());
         } finally { release.countDown(); caller.interrupt(); caller.join(2_000); }
     }
 
@@ -229,15 +247,18 @@ class NativeChatStreamingTest {
         AtomicInteger status = new AtomicInteger(307);
         start(exchange -> {
             exchange.getResponseHeaders().add("Location", "http://127.0.0.1:" + destination.getAddress().getPort() + "/capture");
-            byte[] bytes = "secret-http-error".getBytes(StandardCharsets.UTF_8);
+            byte[] bytes = "请求被拒绝 default-secret".getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(status.get(), bytes.length); exchange.getResponseBody().write(bytes);
         });
         try {
-            for (int code : List.of(307, 401, 503)) {
+            for (int code : List.of(307, 400, 401, 403, 404, 413, 422, 429, 503)) {
                 status.set(code);
                 var failure = assertThrows(ProviderException.class, () -> model("openai-compatible", Duration.ofSeconds(3), Map.of()).complete(request(), delta -> {}));
                 assertFalse(failure.toString().contains("secret"));
+                assertTrue(failure.getMessage().contains("请求被拒绝"));
                 assertNull(failure.getCause());
+                assertEquals(code, failure.statusCode());
+                assertEquals(code == 400, failure.streamFallbackSuggested());
             }
             assertEquals(0, captures.get());
         } finally { destination.stop(0); }

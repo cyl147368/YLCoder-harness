@@ -78,9 +78,22 @@ public final class SessionStore {
         }
     }
 
+    /** 同一会话内回退前的历史快照，不作为新会话列入 /resume。 */
+    public record RewindSnapshot(String savedAt, List<ChatMessage> transcript) {
+        public RewindSnapshot { transcript = List.copyOf(transcript); }
+    }
+
     public record Session(int version, String id, String workspace, String provider, String model,
-                          String status, String updatedAt, List<ChatMessage> transcript) {
-        public Session { transcript = List.copyOf(transcript); }
+                          String status, String updatedAt, List<ChatMessage> transcript, List<RewindSnapshot> rewinds) {
+        public Session {
+            transcript = List.copyOf(transcript);
+            rewinds = rewinds == null ? List.of() : List.copyOf(rewinds);
+        }
+        /** 兼容没有回退快照的旧检查点与调用方。 */
+        public Session(int version, String id, String workspace, String provider, String model,
+                       String status, String updatedAt, List<ChatMessage> transcript) {
+            this(version, id, workspace, provider, model, status, updatedAt, transcript, List.of());
+        }
     }
 
     public String newId() { return UUID.randomUUID().toString(); }
@@ -88,7 +101,7 @@ public final class SessionStore {
     public record Summary(String id, String provider, String model, String status, String updatedAt, String task) {}
     private record Candidate(String id, FileTime modified) {}
 
-    /** 最多读取最近的指定数量检查点；只返回列表需要的摘要，不保留整段对话。 */
+    /** 扫描最近最多 200 个候选，返回指定数量的有效会话；损坏文件不占用列表名额。 */
     public List<Summary> recent(int limit) throws IOException {
         if (limit < 1 || limit > 50) throw new IllegalArgumentException("会话列表数量必须在 1 到 50 之间");
         verifyDirectory(root);
@@ -105,10 +118,11 @@ public final class SessionStore {
                 } catch (IOException failure) { return null; }
             }).filter(java.util.Objects::nonNull)
                     .sorted(Comparator.comparing(Candidate::modified).reversed().thenComparing(Candidate::id))
-                    .limit(limit).toList();
+                    .limit(200).toList();
         }
         var summaries = new ArrayList<Summary>();
         for (Candidate candidate : candidates) {
+            if (summaries.size() >= limit) break;
             try {
                 Session session = load(candidate.id());
                 String task = session.transcript().stream().filter(message -> message.role() == ChatMessage.Role.USER)
@@ -139,6 +153,16 @@ public final class SessionStore {
     }
 
     public void save(String id, String provider, String model, String status, List<ChatMessage> transcript) throws IOException {
+        save(id, provider, model, status, transcript, false);
+    }
+
+    /** 在当前锁内原子保存活动历史和回退前快照；失败时旧检查点保持完整。 */
+    public void rewind(String id, String provider, String model, List<ChatMessage> transcript) throws IOException {
+        save(id, provider, model, "READY", transcript, true);
+    }
+
+    private void save(String id, String provider, String model, String status, List<ChatMessage> transcript,
+                      boolean archivePrevious) throws IOException {
         Session value;
         try { value = new Session(1, id, workspace, provider, model, status, Instant.now().toString(), transcript); }
         catch (RuntimeException failure) { throw new IOException("会话记录无效", failure); }
@@ -146,10 +170,24 @@ public final class SessionStore {
         OwnedLease owned = leases.get(id);
         if (owned != null && owned.lease.lock().isValid()) {
             if (owned.owner != Thread.currentThread()) throw new IOException("会话已被另一线程使用");
-            saveLocked(id, value);
+            saveWithHistoryLocked(id, value, archivePrevious);
         } else {
-            try (Lease ignored = lock(id)) { saveLocked(id, value); }
+            try (Lease ignored = lock(id)) { saveWithHistoryLocked(id, value, archivePrevious); }
         }
+    }
+
+    private void saveWithHistoryLocked(String id, Session value, boolean archivePrevious) throws IOException {
+        List<RewindSnapshot> rewinds = new ArrayList<>();
+        if (Files.exists(path(id, ".json"), LinkOption.NOFOLLOW_LINKS)) {
+            Session previous = load(id);
+            rewinds.addAll(previous.rewinds());
+            if (archivePrevious && !previous.transcript().equals(value.transcript()))
+                rewinds.add(new RewindSnapshot(Instant.now().toString(), previous.transcript()));
+        }
+        Session updated = new Session(value.version(), value.id(), value.workspace(), value.provider(), value.model(),
+                value.status(), value.updatedAt(), value.transcript(), rewinds);
+        validate(updated, id);
+        saveLocked(id, updated);
     }
 
     private void saveLocked(String id, Session value) throws IOException {
@@ -209,7 +247,13 @@ public final class SessionStore {
         catch (RuntimeException failure) { throw new IOException("会话时间戳无效", failure); }
         // 待完成的结果可以构成有效检查点。相互矛盾的证据绝不能被
         // 静默修复，也不能通过原子替换覆盖原先有效的检查点。
-        try { ToolHistory.validate(value.transcript(), true); }
+        try {
+            ToolHistory.validate(value.transcript(), true);
+            for (RewindSnapshot snapshot : value.rewinds()) {
+                Instant.parse(snapshot.savedAt());
+                ToolHistory.validate(snapshot.transcript(), true);
+            }
+        }
         catch (RuntimeException failure) { throw new IOException("会话工具历史无效"); }
     }
 

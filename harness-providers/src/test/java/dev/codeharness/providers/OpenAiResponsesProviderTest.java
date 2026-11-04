@@ -304,7 +304,7 @@ class OpenAiResponsesProviderTest {
         });
         server.start();
         return new OpenAiResponsesProvider().create(new ProviderConfig("openai-responses", "test",
-                URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/v1"), null));
+                URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/v1"), "secret"));
     }
 
     private static String envelope(String status, String output) {

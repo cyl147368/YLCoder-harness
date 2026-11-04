@@ -32,6 +32,17 @@ class GitStatusConfigTest {
         }
     }
 
+    @Test void 分支名查询允许过滤器配置但仍绑定内容并拒绝外部配置() throws Exception {
+        Path config = directory.resolve("config");
+        Files.writeString(config, "[filter \"demo\"]\nclean = first-helper\n");
+        String first = GitStatusConfig.fingerprint(directory, false);
+        Files.writeString(config, "[filter \"demo\"]\nclean = other-helper\n");
+        assertNotEquals(first, GitStatusConfig.fingerprint(directory, false));
+        assertThrows(GitStatusConfig.Ineligible.class, () -> GitStatusConfig.fingerprint(directory));
+        Files.writeString(config, "[include]\npath=../outside\n");
+        assertThrows(GitStatusConfig.Ineligible.class, () -> GitStatusConfig.fingerprint(directory, false));
+    }
+
     @Test void oversizedAndNonUtf8ConfigRemainManual() throws Exception {
         Files.write(directory.resolve("config"), new byte[]{(byte) 0xff});
         assertThrows(GitStatusConfig.Ineligible.class, () -> GitStatusConfig.fingerprint(directory));

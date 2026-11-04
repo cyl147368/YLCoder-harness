@@ -20,11 +20,15 @@ class ConfigLoaderTest {
         assertEquals(3000, config.agent.maxOutputTokens);
         assertFalse(config.permissions.allowCommands);
         assertTrue(config.permissions.autoReview);
+        assertEquals("review", config.permissions.effectiveMode());
+        assertNotNull(config.permissions.reviewer);
         assertEquals(10, config.permissions.reviewTimeoutSeconds);
         assertEquals(8, config.permissions.maxAutoReviews);
         assertEquals("https://your-provider.example/v1", config.baseUrl);
         assertEquals("", config.apiKey);
         assertEquals("HARNESS_API_KEY", config.apiKeyEnv);
+        assertTrue(config.trace.enabled);
+        assertEquals(2000, config.trace.toolResultMaxChars);
     }
 
     @Test void rejectsUnknownFieldsAndDoesNotEchoValues() throws Exception {
@@ -67,7 +71,8 @@ class ConfigLoaderTest {
     @Test void rejectsNullSectionsAndInvalidBudgets() throws Exception {
         Path config = temporary.resolve("bad.yaml");
         for (String invalid : new String[]{"agent: null\n", "permissions: null\n",
-                "agent:\n  context-budget-tokens: 0\n", "provider: null\n"}) {
+                "agent:\n  context-budget-tokens: 0\n", "provider: null\n", "models: null\n",
+                "models:\n  - ' '\n"}) {
             Files.writeString(config, invalid);
             assertThrows(IOException.class, () -> ConfigLoader.load(temporary, config));
         }
@@ -157,6 +162,122 @@ class ConfigLoaderTest {
             Files.writeString(project, "permissions:\n  " + invalid + "\n");
             IOException failure = assertThrows(IOException.class, () -> ConfigLoader.load(repo, project));
             assertTrue(failure.getMessage().contains("permissions.review-timeout-seconds"));
+        }
+    }
+
+    @Test void 可加载独立审核连接和显式模式() throws Exception {
+        Path file = temporary.resolve("reviewer.yaml");
+        Files.writeString(file, """
+                permissions:
+                  mode: manual
+                  allow-commands: true
+                  reviewer:
+                    provider: openai-compatible
+                    model: small-review-model
+                    base-url: https://review.example/v1
+                    api-key: review-inline-fixture
+                    api-key-env: REVIEW_API_KEY
+                    header-env:
+                      X-Review: REVIEW_HEADER
+                """);
+        HarnessConfig config = ConfigLoader.load(temporary, file);
+        assertEquals("manual", config.permissions.effectiveMode());
+        assertEquals("openai-compatible", config.permissions.reviewer.provider);
+        assertEquals("small-review-model", config.permissions.reviewer.model);
+        assertEquals("https://review.example/v1", config.permissions.reviewer.baseUrl);
+        assertEquals("review-inline-fixture", config.permissions.reviewer.apiKey);
+        assertEquals("REVIEW_API_KEY", config.permissions.reviewer.apiKeyEnv);
+        assertEquals(java.util.Map.of("X-Review", "REVIEW_HEADER"), config.permissions.reviewer.headerEnv);
+    }
+
+    @Test void 审核配置只从显式或可信文件载入() throws Exception {
+        Path repo = Files.createDirectories(temporary.resolve("reviewer-repo/.harness")).getParent();
+        Path file = repo.resolve(".harness/config.yaml");
+        Files.writeString(file, "permissions:\n  mode: allow-all\n  reviewer:\n    base-url: https://review.example/v1\n");
+        String oldHome = System.getProperty("user.home");
+        try {
+            System.setProperty("user.home", temporary.resolve("reviewer-home").toString());
+            HarnessConfig ignored = ConfigLoader.load(repo, null);
+            assertEquals("review", ignored.permissions.effectiveMode());
+            assertNull(ignored.permissions.reviewer.baseUrl);
+            assertEquals("allow-all", ConfigLoader.load(repo, null, true).permissions.effectiveMode());
+            assertEquals("https://review.example/v1", ConfigLoader.load(repo, file).permissions.reviewer.baseUrl);
+        } finally { System.setProperty("user.home", oldHome); }
+    }
+
+    @Test void 审核模式与嵌套字段错误不会回显秘密() throws Exception {
+        Path file = temporary.resolve("bad-reviewer.yaml");
+        for (String invalid : new String[]{
+                "mode: secret-fixture", "mode: ''", "reviewer: null",
+                "reviewer:\n    provider: ''", "reviewer:\n    model: ''",
+                "reviewer:\n    base-url: https://secret-fixture@review.example/v1",
+                "reviewer:\n    base-url: https://review.example/v1?key=secret-fixture",
+                "reviewer:\n    base-url: secret-fixture",
+                "reviewer:\n    base-url: ''",
+                "reviewer:\n    api-key-env: secret-fixture",
+                "reviewer:\n    header-env:\n      'Bad Header': SECRET_FIXTURE",
+                "reviewer:\n    header-env:\n      X-Review: null",
+                "reviewer:\n    header-env:\n      X-Review: secret-fixture",
+                "reviewer:\n    unknown: secret-fixture"}) {
+            Files.writeString(file, "permissions:\n  " + invalid + "\n");
+            IOException error = assertThrows(IOException.class, () -> ConfigLoader.load(temporary, file));
+            assertFalse(error.toString().contains("secret-fixture"));
+            assertFalse(error.toString().contains("SECRET_FIXTURE"));
+            assertNull(error.getCause());
+        }
+    }
+
+    @Test void 未指定模式继续解析旧权限开关() throws Exception {
+        Path file = temporary.resolve("legacy-review.yaml");
+        Files.writeString(file, "permissions: {}\n");
+        assertEquals("review", ConfigLoader.load(temporary, file).permissions.effectiveMode());
+        Files.writeString(file, "permissions:\n  auto-review: false\n");
+        assertEquals("manual", ConfigLoader.load(temporary, file).permissions.effectiveMode());
+        Files.writeString(file, "permissions:\n  allow-commands: true\n  auto-review: false\n");
+        assertEquals("allow-all", ConfigLoader.load(temporary, file).permissions.effectiveMode());
+    }
+
+    @Test void 请求格式可以独立配置且省略时保留旧行为() throws Exception {
+        Path file = temporary.resolve("api-format.yaml");
+        Files.writeString(file, "provider: openai-compatible\n");
+        HarnessConfig legacy = ConfigLoader.load(temporary, file);
+        assertNull(legacy.apiFormat);
+        assertNull(legacy.permissions.reviewer.apiFormat);
+        for (String format : new String[]{"chat", "responses"}) {
+            Files.writeString(file, "provider: openai-compatible\napi-format: " + format
+                    + "\npermissions:\n  reviewer:\n    api-format: responses\n");
+            HarnessConfig selected = ConfigLoader.load(temporary, file);
+            assertEquals("openai-compatible", selected.provider);
+            assertEquals(format, selected.apiFormat);
+            assertEquals("responses", selected.permissions.reviewer.apiFormat);
+        }
+    }
+
+    @Test void 错误请求格式在加载时给出脱敏诊断() throws Exception {
+        Path file = temporary.resolve("invalid-api-format.yaml");
+        for (String prefix : new String[]{"", "permissions:\n  reviewer:\n    "}) {
+            for (String invalid : new String[]{"''", "unknown-fixture-secret"}) {
+                Files.writeString(file, prefix + "api-format: " + invalid + "\n");
+                IOException failure = assertThrows(IOException.class, () -> ConfigLoader.load(temporary, file));
+                assertTrue(failure.getMessage().contains("api-format"));
+                assertFalse(failure.toString().contains("unknown-fixture-secret"));
+                assertNull(failure.getCause());
+            }
+        }
+    }
+    @Test void 执行记录默认开启并校验摘要长度而不回显无效内容() throws Exception {
+        Path file = temporary.resolve("trace.yaml");
+        Files.writeString(file, "provider: openai-compatible\n");
+        assertTrue(ConfigLoader.load(temporary, file).trace.enabled);
+        Files.writeString(file, "trace:\n  enabled: false\n  tool-result-max-chars: 256\n");
+        HarnessConfig disabled = ConfigLoader.load(temporary, file);
+        assertFalse(disabled.trace.enabled);
+        assertEquals(256, disabled.trace.toolResultMaxChars);
+        for (String invalid : new String[] {"trace: null\n", "trace:\n  tool-result-max-chars: 127\n",
+                "trace:\n  tool-result-max-chars: 32001\n", "trace:\n  directory: private-should-not-echo\n"}) {
+            Files.writeString(file, invalid);
+            IOException failure = assertThrows(IOException.class, () -> ConfigLoader.load(temporary, file));
+            assertFalse(failure.toString().contains("private-should-not-echo"));
         }
     }
 }

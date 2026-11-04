@@ -77,6 +77,17 @@ class TerminalExperienceTest {
                 "工具与路径同处一行，不能回显命令或文件正文");
     }
 
+    @Test void toolFailureShowsSanitizedReasonForDiagnosis() {
+        StringWriter out = new StringWriter(), err = new StringWriter();
+        var ui = new TerminalUi(new PrintWriter(out, true), new PrintWriter(err, true), false);
+        ui.beginTask(true);
+        ui.toolError("edit_file", "工具失败：old_text 匹配超过一处\n\033[2J");
+        assertTrue(err.toString().contains("工具未完成：edit_file；原因：old_text 匹配超过一处"));
+        assertTrue(err.toString().contains("正在把错误交给模型处理"));
+        assertFalse(err.toString().contains("\033"), "错误内容不能注入终端控制序列");
+        assertFalse(err.toString().contains("\n\033"), "错误内容不能注入额外终端行");
+    }
+
     @Test void responseWithoutToolEvidenceShowsReplyAndMissingUsageClearly() {
         StringWriter out = new StringWriter(), err = new StringWriter();
         var ui = new TerminalUi(new PrintWriter(out, true), new PrintWriter(err, true), false);

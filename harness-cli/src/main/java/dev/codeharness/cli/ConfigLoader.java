@@ -34,14 +34,17 @@ public final class ConfigLoader {
             throw new IOException("YAML 配置无效或包含不支持的字段；请参阅 config.example.yaml");
         }
         if (config == null) throw new IOException("配置文件为空：" + selected);
-        if (config.agent == null || config.permissions == null || config.headerEnv == null || config.mcp == null || config.web == null) {
-            throw new IOException("agent、permissions、header-env、mcp 和 web 不能为 null");
+        if (config.agent == null || config.permissions == null || config.headerEnv == null || config.mcp == null
+                || config.web == null || config.trace == null || config.models == null) {
+            throw new IOException("agent、permissions、header-env、mcp、web、trace 和 models 不能为 null");
         }
         if (config.timeoutSeconds < 1) throw new IOException("timeout-seconds 必须为正数");
         if (config.permissions.reviewTimeoutSeconds < 1 || config.permissions.reviewTimeoutSeconds > 30
                 || config.permissions.maxAutoReviews < 1 || config.permissions.maxAutoReviews > 32) {
             throw new IOException("permissions.review-timeout-seconds 必须为 1..30，max-auto-reviews 必须为 1..32");
         }
+        try { ApiFormat.validate(config.apiFormat); ReviewProviderResolver.validate(config); }
+        catch (IllegalArgumentException invalid) { throw new IOException(invalid.getMessage()); }
         if (!TokenizerInputTokenCounter.supported(config.agent.tokenCounter)) {
             throw new IOException("agent.token-counter 必须是 utf16、cl100k 或 o200k");
         }
@@ -50,9 +53,20 @@ public final class ConfigLoader {
         }
         if (config.provider == null || config.provider.isBlank()
                 || config.model == null || config.model.isBlank()) throw new IOException("provider 和 model 不能为空白");
-        if (config.agent.maxIterations < 1 || config.agent.contextBudgetTokens < 64
+        if (config.models.size() > 64) throw new IOException("models 最多配置 64 项");
+        for (String model : config.models) {
+            if (model == null || model.isBlank() || model.length() > 256
+                    || model.codePoints().anyMatch(code -> Character.isISOControl(code)
+                    || Character.getType(code) == Character.FORMAT)) {
+                throw new IOException("models 中的模型名必须是 1 到 256 个可见字符");
+            }
+        }
+        if (config.agent.contextBudgetTokens < 64
                 || config.agent.maxToolOutputChars < 128 || (config.agent.maxOutputTokens != null && config.agent.maxOutputTokens < 1)) {
-            throw new IOException("智能体限制无效：迭代次数和输出上限须为正数，context >= 64，工具输出 >= 128");
+            throw new IOException("智能体限制无效：context >= 64，工具输出 >= 128，输出 token 须为正数");
+        }
+        if (config.trace.toolResultMaxChars < 128 || config.trace.toolResultMaxChars > 32_000) {
+            throw new IOException("trace.tool-result-max-chars 必须在 128 到 32000 之间");
         }
         validateMcp(config.mcp);
         dev.codeharness.cli.web.WebTools.validate(config.web);

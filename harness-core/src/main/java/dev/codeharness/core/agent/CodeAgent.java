@@ -35,6 +35,11 @@ public final class CodeAgent {
         this.contextCompactor = Objects.requireNonNull(contextCompactor, "contextCompactor");
     }
 
+    /** 同时约束请求中的工具结构和实际执行查找，不改变原代理。 */
+    public CodeAgent withTools(java.util.function.Predicate<Tool> allowed) {
+        return new CodeAgent(model, tools.filter(allowed), contextCompactor);
+    }
+
     public AgentResult run(String task, AgentRunOptions options) {
         return run(task, options, AgentListener.NOOP);
     }
@@ -67,14 +72,16 @@ public final class CodeAgent {
             int schemaTokens = contextCompactor.estimateToolTokens(tools.definitions());
             int messageBudget = options.contextTokenBudget() - schemaTokens;
             if (messageBudget < 1) throw new IllegalArgumentException("工具结构超过配置的输入上下文预算");
-            for (int iteration = 1; iteration <= options.maxIterations(); iteration++) {
+            for (int iteration = 1; ; iteration++) {
                 if (options.cancelled().getAsBoolean() || Thread.currentThread().isInterrupted()) {
                     status = AgentResult.Status.CANCELLED;
                     break;
                 }
-                transcript = new ArrayList<>(contextCompactor.compact(transcript, messageBudget, options.maxToolOutputChars()));
+                // 压缩只生成本次模型请求的投影；完整 transcript 用于检查点、历史展示和恢复。
+                List<ChatMessage> requestMessages = contextCompactor.compact(
+                        transcript, messageBudget, options.maxToolOutputChars());
                 final int currentIteration = iteration;
-                ChatRequest request = new ChatRequest(transcript, tools.definitions(), options.maxOutputTokens());
+                ChatRequest request = new ChatRequest(requestMessages, tools.definitions(), options.maxOutputTokens());
                 notifySafely(() -> observer.onModelRequest(currentIteration, request));
                 if (cancelled(options)) {
                     status = AgentResult.Status.CANCELLED;
@@ -116,10 +123,6 @@ public final class CodeAgent {
                         notifySafely(() -> observer.onText(response.text()));
                         status = AgentResult.Status.COMPLETED;
                     }
-                    break;
-                }
-                if (iteration == options.maxIterations()) {
-                    status = AgentResult.Status.MAX_ITERATIONS;
                     break;
                 }
                 if (!executeTools(response.toolCalls(), transcript, options, observer, currentIteration)) {

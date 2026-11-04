@@ -193,9 +193,10 @@ def run_case(args, task, variant, repetition):
             serving.start()
             launch = [args.java, '--disable-@files', '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8',
                       '-Dstderr.encoding=UTF-8', '-jar', str(JAR)]
+            # run 子命令不暴露 --max-iterations；传入会被 picocli 判为非法参数并以退出码 2 秒退，这里仅传受支持参数。
             cli_arguments = ['--config', str(config), '--workspace', str(workspace),
                        '--base-url', f'http://127.0.0.1:{server.server_port}/v1', '--context-budget', str(budget),
-                       '--max-iterations', '24', '--parallel-reads', '4', '--allow-commands', '--quiet', '--json',
+                       '--parallel-reads', '4', '--allow-commands', '--quiet', '--json',
                        'run', task['prompt'] + ' 检查历史与源码，从过期哈希错误中恢复，更新相关文件并编译。']
             if os.name == 'nt':
                 # 保留中文评测任务，原始用户要求的精确断言不能验证被 ACP 转换过的文本。

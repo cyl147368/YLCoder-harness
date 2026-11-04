@@ -17,6 +17,11 @@ interface TerminalInput {
     default String readCommand(String prompt, java.util.function.Supplier<java.util.List<String>> candidates) throws IOException {
         return readLine();
     }
+    /** 读取命令；支持行编辑的终端可预填草稿，仍需用户回车才会提交。 */
+    default String readCommand(String prompt, java.util.function.Supplier<java.util.List<String>> candidates,
+                               String initialBuffer) throws IOException {
+        return readCommand(prompt, candidates);
+    }
     default void closeEditor() throws IOException { }
     /** 注册会话取消处理器；返回用于恢复原处理器的操作。 */
     default Runnable onInterrupt(Runnable handler) { return () -> { }; }
@@ -24,6 +29,10 @@ interface TerminalInput {
     default Runnable onEscape(Runnable handler) { return () -> { }; }
     default void startTaskInput() { }
     default void stopTaskInput() { }
+    /** JLine 终端上的权限模式快捷键请求；读取器不支持时保持 false。 */
+    default boolean takeApprovalModeToggle() { return false; }
+    /** 快捷键触发前的未提交草稿，用于恢复行编辑。 */
+    default String takeInputDraft() { return null; }
 
     static TerminalInput system() {
         var console = System.console();

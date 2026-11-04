@@ -1,8 +1,14 @@
 # YLCoder-harness
 
+任务意图识别已加入：默认自动区分问答、分析、方案、修改和执行；用 `/intent` 查看，`/intent auto|chat|analyze|plan|edit|execute` 覆盖。设置仅影响当前进程，下一项任务生效。只读模式禁用 shell、写入和未知扩展工具，命令权限审核继续生效。详见 [任务意图识别](docs/TASK_INTENT.md)。
+
 内置联网搜索 `web_search` 和网页读取 `web_fetch`，适用于最新新闻、官方文档、版本与报错查询。默认无需额外搜索密钥：使用 Bing RSS，失败时尝试 DuckDuckGo；也可通过 `web.provider: searxng` 与 `web.search-url` 指定自建搜索服务。`ylc --no-web` 可关闭联网工具，已有模型厂商配置无需修改。
 
 交互界面用青色“你 ›”标记提问、紫色“◆ YLCoder”标记回答；底栏按模型、输入/输出、缓存和执行状态分色，保留终端原生滚动历史。`--no-color` 或 `NO_COLOR` 可使用纯文本。
+
+交互回答支持终端 Markdown 排版：标题、粗体、斜体、删除线、行内代码、代码块、列表、引用、链接和基础表格会转换为可读的终端样式。为避免流式输出显示半截标记，交互模式会在本轮答案完整后排版；JSON 输出仍保留原始 Markdown，便于脚本处理。
+
+默认生成本地 Markdown 执行日志，记录每次实际模型请求、回复、重试和工具结果摘要；重复提示词引用首次记录。交互中输入 `/logs`，终端执行 `ylc logs` 查看文件位置，详见[执行日志使用说明](docs/EXECUTION_LOGS.md)。
 
 这是一个基于 Java 21 的编程智能体，提供 CLI、可恢复的对话、多种模型协议和受限的工作区工具。已验证结果、复验命令和已知限制见[验证记录](docs/VERIFICATION.md)。
 
@@ -51,13 +57,14 @@ ylc run "修复失败的解析器测试并验证修复结果"
 ylc resume SESSION_ID "同时处理空输入"
 ylc providers
 ylc doctor
+ylc logs
 ```
 
 请将示例项目路径换成真实目录。安装器在当前 PowerShell 中执行时会刷新本终端 PATH；通过另一个进程安装时，完成后重新打开终端。更新运行时可再次运行安装器，已有用户配置保留。**在哪个目录执行 `ylc`，默认就以该目录为工作区。** YAML 中旧的 `workspace` 字段保留解析兼容，但不再改变工作区；只有显式传入 `--workspace "E:\另一个项目"`（或 `-w`）才会切换。`--config "C:\配置\另一个厂商.yaml"` 仅选择配置，不切换工作区。进入后输入 `/status` 可核对实际工作区。
 
 不安装也能在任意目录用绝对路径启动：源码版 `& "E:\github\YLCoder-harness\ylc.cmd"`，便携版 `& "C:\工具\YLCoder-harness\bin\ylc.cmd"`。启动器根据自身位置找到 jar，并保留调用目录。Linux/macOS 可执行 `python3 scripts/install.py`，再自行把 `~/.local/share/YLCoder-harness/bin` 加入 PATH；Ubuntu Java 21 已通过公开 CI 的离线安装与运行验收，其他 Linux 发行版和 macOS 尚未验收。完整安装与故障处理见[中文使用手册](使用手册.md)及[验证记录](docs/VERIFICATION.md)。
 
-不指定子命令时，CLI 可以连续接受任务。输入 `/project` 可立即查看本地工作区的顶层文件名，不调用模型、不读取文件正文；输入“分析当前项目”才会让模型选择文件并分析。`/status` 显示工作区、模型、厂商、接口协议、完整会话 ID、保存状态和当前进程累计用量，`/help` 显示帮助，`/exit` 退出。未知的斜杠命令会在本地提示，不会发送给模型。
+不指定子命令时，CLI 可以连续接受任务。输入 `/project` 可立即查看本地工作区的顶层文件名，不调用模型、不读取文件正文；输入“分析当前项目”才会让模型选择文件并分析。`/model` 打开模型选择列表，合并当前、配置、最近会话和兼容网关 `/models` 的候选；也可用 `/model 序号` 或 `/model 模型名` 直接切换。恢复旧会话后同样可以覆盖检查点中的旧模型；切换不调用推理模型，下一条任务生效并持久化。`/status` 显示工作区、模型、厂商、接口协议、完整会话 ID、保存状态和当前进程累计用量，`/logs` 列出当前会话最近的执行日志，`/help` 显示帮助，`/exit` 退出。未知的斜杠命令会在本地提示，不会发送给模型。
 
 启动界面显示 `ylc`、当前工作区和四个快捷命令。任务、回复与输入之间留出空白；工具名和文件路径合为一行，路径过长会缩略。
 
@@ -71,9 +78,11 @@ ylc doctor
 
 部分兼容网关的流式响应不返回用量，会显示“未报告”；可使用 `ylc --no-stream` 获取普通响应中的用量（前提是厂商提供）。程序不会为补齐统计额外发送模型请求。
 
-兼容网关在 SSE 内返回可降级的 `error` 或错误协议事件、且尚未输出文本时，默认自动改用非流式重试同一请求一次，本进程后续请求也改用非流式。重试不追加用户消息、不重放已完成的工具；再次失败就停止。两次真实请求均计入统计，失败请求的未知用量不当作零费用。已经输出部分文本、明确的权限/额度/限流错误、普通畸形分块和用户取消均不自动重试。配置 `agent.stream-fallback: false` 可关闭自动降级重试。交互中可用 `/stream off`、`/stream on` 切换，`/stream` 查看状态，配置 `agent.stream: false` 可永久关闭流式。
+模型请求收到 HTTP 408/429/500/502/503/504 时，会保持当前 Chat/Responses 协议及流式开关，按 **1、2、4 秒**等待，最多重试 **3 次**。流式请求遇到 HTTP 400、可降级的 SSE 错误、断连或超时，且尚未输出文本时，才切换到非流式；兼容降级与暂时性 HTTP 重试共用一个预算，单轮包含初次请求最多 4 次。400 降级后本进程继续使用非流式，临时 HTTP 失败不会关闭流式。重试不追加消息、不重放已完成工具，失败请求也计入统计。已显示部分文本、用户取消或明确的 HTTP 401/403/404/413/422 等失败不继续重试；Esc / Ctrl+C 可中断等待。配置 `agent.stream-fallback: false` 仅关闭自动兼容降级，不关闭上述临时 HTTP 重试。交互中可用 `/stream off`、`/stream on` 切换，`/stream` 查看状态。
 
-`run` 执行一个任务，并限制模型轮次；一次流式降级重试可额外发起一个请求。`resume` 从同一个工作区重新加载对话记录，可附加后续要求。在 run/resume 中添加 `--json` 可输出机器可读结果，包含原有结果字段以及 `provider`、`model`、`providerHost`、`usageReport`。添加 `--quiet` 可关闭进度输出，保留最终统计及必要的人工审批提示。退出码：0 表示完成，1 表示失败，2 表示 CLI 用法错误，3 表示达到迭代上限，130 表示取消。模型声称完成并不代表代码正确，请检查报告中的验证结果。
+原生 HTTP 适配器和 Chat SSE 错误会显示厂商的 `message`、`code`、`type`、`param` 等诊断字段，也支持短纯文本错误；配置中的密钥、自定义请求头值和常见凭据格式先脱敏，移除终端控制字符，摘要最多 1024 字符。超大错误正文、HTML 和损坏的 JSON 会提示已省略。JSON 模式在最终 `error` 字段返回摘要，不混入重试进度。网络层没有厂商错误正文时，显示连接拒绝、DNS 失败、超时或连接提前关闭等原因及异常类型，不再统一显示“流式请求失败”；不输出底层异常中的地址、请求头或报文。
+
+`run` 执行一个任务；流式降级最多额外发起 3 个请求。`resume` 从同一个工作区重新加载对话记录，可附加后续要求。在 run/resume 中添加 `--json` 可输出机器可读结果，包含原有结果字段以及 `provider`、`model`、`providerHost`、`usageReport`。添加 `--quiet` 可关闭进度输出，保留最终统计及必要的人工审批提示。退出码：0 表示完成，1 表示失败，2 表示 CLI 用法错误，3 表示达到迭代上限，130 表示取消。模型声称完成并不代表代码正确，请检查报告中的验证结果。
 
 交互任务共用一个会话，每个任务都会先保存最终状态，再接受下一个任务。EOF 和 `/exit` 都保留最近已保存的任务，并返回本次进程在当前会话中最近任务的退出码；失败之后若后续任务成功，退出码会恢复为零。输入 `/resume` 查看当前工作区最近的历史会话，再用 `/resume 序号` 或 `/resume 完整会话ID` 切换；切换本身不调用模型，继续输入任务才会发起请求。恢复失败保留原会话，成功切换后不会混入原会话的对话。`/status` 查看完整会话 ID 和恢复命令。第一个任务之前，`/help` 会说明尚未保存任务。`python scripts/smoke_interactive.py` 覆盖管道任务、检查点、独立进程恢复、EOF 和失败恢复。`python scripts/smoke_console_input.py` 用于在 Windows 真实控制台中注入 Unicode 键盘事件，检查中文任务、工具和审批链路；这种自动化方式不等于验证每一种实体键盘或输入法。
 
@@ -81,13 +90,15 @@ ylc doctor
 
 交互中按一次 `Ctrl+C` 中断当前任务并退出，也适用于等待输入、模型响应和命令审批。程序保留可恢复的检查点、释放会话锁并恢复终端，返回退出码 `130`；未提交的输入和不完整的流式回复不会作为完整消息保存。重新启动后可用 `/resume`、`/resume 1` 恢复。`python scripts/smoke_console_input.py --interrupt` 使用 localhost 夹具和真实 Windows 控制台键盘事件验证这些行为。
 
-按 `Esc` 取消当前任务但保留交互会话，空闲时清空输入草稿；在 500 毫秒内连按两次 `Esc` 打开历史回退选择，输入编号后回到该提问之前。也可输入 `/rewind` 或 `/rewind 序号`。回退创建新的持久化会话分支，保留原会话及完整工具记录，不请求模型、不重放工具、不撤销实际文件修改。回退点来自当前保留的上下文，已被上下文压缩删除的旧轮次不在列表中。按键需要正常 JLine 交互终端；管道或 `TERM=dumb` 可使用 `/rewind`。`python scripts/smoke_console_input.py --escape` 验证真实 Windows 控制台中的取消、继续输入和回退。
+按 `Esc` 取消当前任务但保留交互会话，空闲时清空输入草稿；在 500 毫秒内连按两次 `Esc` 打开历史回退选择，输入编号后回到该提问之前，并将所选提问预填到输入框中，可编辑后直接发送。也可输入 `/rewind` 或 `/rewind 序号`。回退继续使用当前会话 ID，不增加 `/resume` 列表项；回退前的完整历史保存在同一检查点中，可用 `/history previous` 查看最近一次快照。回退不请求模型、不重放工具、不撤销实际文件修改。请求上下文压缩不删除已保存的历史记录。按键需要正常 JLine 交互终端；管道或 `TERM=dumb` 可使用 `/rewind`。`python scripts/smoke_console_input.py --escape` 验证真实 Windows 控制台中的取消、继续输入和回退。
 
 ## 配置
 
 使用 [config.example.yaml](config.example.yaml)。配置优先级依次为显式 `--config`、`~/.code-harness/config.yaml`、默认值。仓库内的 `.harness/config.yaml` 默认被忽略；提供 `--trust-project-config` 后才会读取，而且优先于用户配置。显式 `--config` 和 `--trust-project-config` 授权配置文件选择端点、凭据变量和命令策略，因此使用前请审阅文件。CLI 参数覆盖已加载的配置项；工作区始终由调用目录或显式 `--workspace` 决定，不读取 YAML 的旧 `workspace` 值。相对工作区路径和显式配置路径以调用目录为基准。未知 YAML 键会被拒绝。
 
 凭据支持配置中的 `api-key` 或环境变量引用 `api-key-env`。优先级为：显式 CLI `--api-key-env`、非空白的配置 `api-key`、配置 `api-key-env`、厂商内置回退变量。`header-env` 将额外 HTTP 请求头名称映射到环境变量名。配置密钥只在内存中传给厂商适配器，不写入会话或日志；YAML 解析错误也不回显配置值。省略 `base-url` 时使用厂商默认地址。恢复时需再次提供同一配置。可以通过参数主动切换厂商或模型。
+
+自定义厂商支持 Responses 接口时，可保留 `provider: openai-compatible`，增加 `api-format: responses`，或启动时传 `ylc --api-format responses`。`base-url` 填 API 根地址，例如 `https://your-provider.example/v1`，不要附加 `/responses` 或 `/chat/completions`。`api-format` 只适用于 `openai`、`openai-compatible`、`openai-responses`，取值为 `chat` 或 `responses`；省略字段保持所选 provider 原有默认协议。Responses 支持 SSE 文本、函数调用和加密推理回放；流式失败后的非流式重试仍访问同一 `/responses` 接口。
 
 CodeGo 仅用于已归档的真实验证。[configs/codego.example.yaml](configs/codego.example.yaml) 和 `CODEGO_API_KEY` 保留为可选的验证复现配置；日常使用从上面的通用模板配置自己的厂商。历史实测证据见 [CodeGo 配置与实测验收](docs/CODEGO.md)。
 
@@ -96,7 +107,7 @@ CodeGo 仅用于已归档的真实验证。[configs/codego.example.yaml](configs
 | 厂商 ID | 协议 | 默认密钥变量 | 说明 |
 |---|---|---|---|
 | `openai` | 原生 OpenAI Chat Completions | `OPENAI_API_KEY` | 流式输出文本和完整工具调用；使用 `max_completion_tokens` |
-| `openai-responses` | OpenAI Responses | `OPENAI_API_KEY` | 无状态文本/函数调用，回放工具轮次和最终轮次的加密推理 |
+| `openai-responses` | OpenAI Responses | `OPENAI_API_KEY` | SSE 文本/函数调用；无状态回放工具轮次和最终轮次的加密推理 |
 | `openai-compatible` | Chat Completions 兼容协议 | `OPENAI_API_KEY` | 原生流式输出与自定义 base URL；使用 `max_tokens` |
 | `langchain4j-openai` | 通过 LangChain4j 1.22 使用 OpenAI | `OPENAI_API_KEY` | 真实流式文本、组装工具调用和 JDK 传输 |
 | `anthropic` | Messages | `ANTHROPIC_API_KEY` | 合并工具结果；统计缓存输入 |
@@ -114,17 +125,69 @@ CodeGo 仅用于已归档的真实验证。[configs/codego.example.yaml](configs
 
 工具包括 `list_files`、字面量 `search_files`、限制行范围的 `read_file`、`write_file`、字面量 `edit_file`、`changes` 和 `run_command`。`edit_file` 只替换恰好一个匹配，可要求预期 SHA-256；匹配不唯一或内容过期时会失败。小范围编辑避免发送整个替换文件。文件写入使用原子替换，并拒绝经过符号链接。搜索会剪枝依赖/构建目录，跳过二进制或不可读文件。写入/编辑结果包含有界的上下文差异；`changes` 将已追踪文件与当前工具注册表中首次修改前的基线比较。恢复调用不会延续该基线。内存和输出限制见[变更报告](docs/CHANGE_REPORT.md)。
 
-默认启用低风险命令自动审核，无需修改已有配置。有限的只读检查先经过本地候选规则，再交给独立上下文、没有工具权限的审核子 agent；只有两者都通过才执行，减少重复输入 `y`。审核复用当前配置的厂商和模型，只接收命令、规范工作区和实际执行参数，不接收聊天历史或项目正文。删除、安装、网络操作、解释器、构建/测试脚本和复杂 shell 仍需手动确认；项目测试能执行代码，不会因名称叫“测试”就自动放行。文件工具仍按原来的工作区边界直接读写；MCP 审批独立。
+默认权限模式是 `review`：先做本地路径和执行条件检查，明确安全的查询直接放行；其余受支持的查询与常规 Maven 构建/测试交给没有执行工具的审核模型。删除、安装、任意脚本和复杂 shell 仍需手动确认；模型不能扩大已支持的执行计划范围。内置文件工具仍按工作区边界直接读写；MCP 审批独立。
 
-常用候选包括 `pwd`、`dir /b`、`ls`、`git branch --show-current` 和 `git status --short`，完整固定写法见[使用手册](使用手册.md)。这是“本地边界检查 + AI 审核”，通过本地规则仍须 AI 批准。Git 查询要求工作区根目录有普通 `.git`；状态查询还会检查仓库配置，过滤器、外部或条件配置、部分克隆及无法可靠识别的配置会说明原因并转人工。自动执行使用审核过的绝对程序路径及固定参数，禁用 Git 全局/系统配置、fsmonitor、pager、子模块状态检查、懒加载联网和可选索引写入。审核期间配置改变会使批准失效，修改配置后也不能复用旧结果。`git diff` 暂未加入自动审核范围。
+对于没有命中本地固定计划、但 shell 结构仍可确定解析且不含硬危险命令的查询，会按参考项目的流程交给无工具分类器。分类器只能批准明显的只读检查；删除、写入、安装/发布、解释器、敏感路径、凭据读取和网络上传在本地直接拦截。分类器不可用、超时或返回人工结论时仍会询问 `y/N`。
 
-审核失败、超时、答复不明确或达到次数上限时，交互终端回到 `y/N`；管道模式拒绝该操作，不会把下一条任务当作审批回答。同一任务内通过的完全相同工作区、命令和执行计划可复用审核结果；下一任务或新进程恢复会重新审核，手动批准也不会扩大后续权限。`ylc --no-auto-review` 或可信配置中的 `permissions.auto-review: false` 可恢复逐项手动审批。显式 `--allow-commands` / `permissions.allow-commands: true` 仍会预先批准所有命令，并优先于自动审核开关。
+| 操作 | `review` 模式的实际处理 |
+| --- | --- |
+| `pwd`、`cd`、受支持的 `ls/dir`、固定 `find AGENTS.md`、`where /r . AGENTS.md` | Java 原生只读查询；不调用审核模型、不启动 shell 或外部程序 |
+| `rg --files`、受支持的 rg 正文搜索，可限定多个相对目录并加单个 `head` 结果上限 | Java 原生查询；不调用审核模型，也不启动 shell、rg 或 head |
+| `git status` 支持的只读选项、`git branch --show-current` | 通过原有仓库、程序路径及配置检查后本地放行；执行固定参数的外部 Git |
+| `git clean -nd` 等清理预览、受支持的 `date/Get-Date` | 先生成受限计划，再调用审核模型；批准后执行固定参数 |
+| 标准 Maven 3.9.x 的 `mvn/mvn.cmd validate/compile/test-compile/test/package/verify` 及受支持选项 | 本地绑定项目配置和外部 Java/Maven 安装，交给审核 AI；批准后直接执行固定参数 |
+| 实际清理、安装/发布、任意写入命令、其他构建/测试脚本、其他管道或重定向等 | 交互终端人工确认；无交互终端时拒绝 |
 
-固定格式的 `date` 时间查询和 Windows `Get-Date`（包括 `powershell -NoProfile -Command "Get-Date -Format 'yyyy-MM-dd HH:mm:ss zzz'"`）也会进入 AI 审核，通过后直接执行。Windows 将这些时间查询转换为固定的 .NET 只读表达式；POSIX 使用系统 `date` 绝对路径及独立参数，均不执行模型提供的原始 shell 文本。支持的格式见[使用手册](使用手册.md)。前置规则未通过时会明确提示“尚未调用审核 AI”，避免与 AI 审核结论混淆。
+常规 Maven 命令支持 `-pl`、`-am`、`-o` 和通过检查的 `-D` 参数，命令上限为 4096 字符。例如 `mvn -o -pl server -am -DskipTests=false -Dtest=ApiKeyFilterTest,MarkdownPathResolverTest -Dsurefire.failIfNoSpecifiedTests=false test` 会进入审核 AI。审核包含当前用户任务、目标、模块及项目插件/扩展摘要；批准后启动绑定的外部 Java 和 Maven，不通过 shell 或工作区包装器。项目配置或运行时改变会使旧批准失效。Maven 3.8/4、`clean/install/deploy`、插件目标、外部 settings、JVM 代码加载参数和任意命令串接仍需人工确认。
 
-支持组合 Git 状态的只读选项，例如 `git status --short --branch --untracked-files=all`；`git clean -nd` / `git clean --dry-run -d` 预览也可经 AI 批准后执行，实际删除的 `git clean -fd` 仍需确认。安装了工作区外部的 ripgrep 时，`rg --files --hidden -g AGENTS.md -g '!.git'` 等文件名查询也会进入 AI 审核；固定禁用 rg 配置、不跟随链接，并排除 `.git` 与 `.harness`。不开放任意 rg 参数、外部路径或 shell 拼接。
+Maven 构建会执行插件与测试代码，可写入文件和联网，**不是只读操作，也不是沙箱**。`-o` 只限制 Maven 下载依赖，不能阻止项目插件或测试自行联网。
 
-每次审核也是一次可能付费的模型请求。默认每项任务最多审核 8 次、每次最多等待 10 秒、输出上限为 96 tokens；次数和超时分别由 `permissions.max-auto-reviews`（1～32）与 `permissions.review-timeout-seconds`（1～30）控制，不占主智能体的 `agent.max-iterations`。审核用量单列在 `review` 统计中，顶层 `usage` 包含主智能体和审核已报告的用量；缺失用量不表示免费。`--quiet` 隐藏普通审核进度，仍显示需要人工确认的原因与提示。
+原生文件遍历不跟随符号链接或 junction，递归排除 `.git/.harness`，默认最多访问 10,000 项、返回 1,000 项，限制输出为 11,000 字符、深度为 32，并在遍历中检查 2 秒时间预算及中断。rg 兼容查询不读取 `.gitignore/.ignore`，因此可能列出或搜索被 Git 忽略的普通文件；结果会提示这一差异。这是受限查询，不是完整的 rg/find/where 实现。具体写法见[使用手册](使用手册.md)。
+
+`review` 模式支持 `rg --files` 多目录文件发现及正文搜索，最多指定 32 个工作区内相对目录或文件。`-g/--glob` 接受 `*`、`?`、`**` 和 `!` 排除模式，例如 `-g '*.java' -g '!target'`，不支持 `[]/{}`。正文支持 `-n` 行号、`-i` 忽略大小写、`-F` 字面文本、`-e` 多模式及对应长选项；正则使用 RE2J，不支持 PCRE 回溯引用或前后查找。引号内的 `|` 是正则内容，末尾唯一的 `| head -200`、`| head -n 200` 或 `| head --lines=200` 会转为结果数上限，范围 1～1000；无需安装 head。命令最多 4096 字符、64 组 glob；head 和其他预算先达到者截断。
+
+`rg --files` 输出可在 `head` 前加入单个路径前缀裁剪变换，例如 `| sed 's#server/src/main/java/##'`。程序只接受空替换目标 `s#前缀##`，在 Java 内存中处理文件名，不启动 `sed` 或读取文件正文；任意 sed 脚本、替换内容或非路径变换仍会转人工。
+
+```text
+rg --files server/src client/src | head -200
+rg -n "@RestController|@Service|Redis" server/src infra/src | head -240
+```
+
+正文搜索每文件最多读取 1,000,000 字节，每查询累计最多 8,000,000 字节；跳过过大、含零字节或无效 UTF-8 的文件，并排除 `.env`、凭据目录、私钥等常见敏感路径，即使显式指定或加 `--hidden` 也不会读取。它不保证识别普通源码中的所有秘密；应避免把秘密写入代码。变量/命令展开、重定向及其他管道不会通过该快速路径。
+
+`where /r . AGENTS.md` 与 `rg/find` 共用上述原生执行器，在 `review` 模式直接本地放行；也接受 `where.exe`、`/R`、用引号包裹当前目录 `.`，以及多个既有受限文件名模式，例如 `where.exe /R "." AGENTS.md README.md "*.java"`。查询仅限当前工作区，输出匹配文件的绝对路径，不搜索 PATH、不展开 PATHEXT；没有匹配时按原生查询统一返回成功，并提示“未找到匹配文件”。它不调用外部 where，也不支持任意目录或未知模式。
+
+Git 查询要求工作区根目录有普通 `.git`，并绑定仓库配置指纹。过滤器、外部或条件配置、部分克隆及无法可靠识别的配置会转人工；精确的 `git branch --show-current` 不读取工作树，不因存在过滤器配置而被拦截，其他配置检查仍生效。固定执行参数禁用 Git 全局/系统配置、fsmonitor、pager、懒加载联网和可选索引写入；状态查询不深入子模块。审核后会重新核对执行条件，变化会使批准失效。
+
+在 `review` 模式，常见只读差异查询也走本地快速路径，无需输入 `y`、无需调用审核 AI：
+
+```shell
+git diff
+git diff -- build.sh pom.xml soulclaw-knowledge-server/src/main/resources/application.yml
+git diff --stat
+git diff --name-only
+git diff --cached --name-status
+git diff -- "中文 文件.txt"
+```
+
+支持 `--cached/--staged` 和单个输出格式 `--stat/--numstat/--shortstat/--name-only/--name-status`，选项写在 `--` 前，限定文件或目录写在 `--` 后。路径使用工作区内相对路径和 `/` 分隔符；含空格可用整参数单引号或双引号。保留安全参数 `--no-ext-diff/--no-textconv/--ignore-submodules=all/--no-color` 也可使用。系统直接启动固定 Git 程序并隔离 Git 环境及全局/系统配置；只查看暂存区或当前工作区，不支持任意提交比较、通配符、路径魔法或输出写文件。无 pathspec 的差异在审批阶段不扫描整个工作区，因此无关的 `.harness` junction 不会造成误判；实际未暂存差异仍读取受跟踪文件，不能认为所有受跟踪路径都已逐一核验。显式路径含链接/junction、特殊文件、越界或不可访问时仍转人工。单次最多 64 个路径，命令上限 4,096 字符。不存在的文件可查询删除差异，但尚存父目录也需通过检查。
+
+小范围只读命令链会先拆为明确的参数和连接操作符。当前本地支持 `git status`、受支持的 `git diff`、无 revision/pathspec 的 `git log --oneline -N`、工作区内多目录 `ls`、安全字面量 `echo`、`head`、`tail`、`wc -l` 和普通文件的 `wc -c`；最多 12 段，使用 `&&`、`;` 或单个 `|` 连接。命令审核上限统一为 4,096 字符，不再对普通命令单独限制为 128 字符。`2>/dev/null` 丢弃 stderr，Windows 改写为 `2>NUL`；`2>&1` 保留合并语义。ls 保留选项和目录，`*/` 展开为最多 128 个非隐藏目录；ls/wc 检查操作数与祖先路径。全部程序、配置和路径复核通过后本地放行，不调用审核模型。
+
+剩余可解析、通过安全检查的查询可交给无工具分类器；AI 和本地路径共用解析结果，执行绑定的外部程序及重新生成的参数。AI 不可用、建议人工确认或计划变化时仍询问用户。当前是有界语法实现，没有移植参考项目完整的 Bash AST；不支持 `||`、变量/命令展开及文件读写重定向，也不构成操作系统沙箱。
+
+
+用 `ylc --approval-mode review`、`manual` 或 `allow-all` 切换模式，或设置 YAML `permissions.mode`。`manual` 对 shell 逐项确认；`allow-all` 预先允许所有 shell 命令。CLI 优先级为显式 `--approval-mode` → `--allow-commands` → `--no-auto-review` → YAML。YAML 显式 `permissions.mode` 优先于旧布尔开关；省略 mode 时，`allow-commands: true` 优先，否则由 `auto-review` 决定 review/manual。原有配置继续兼容。
+
+交互任务输入框按 **Shift+Tab**（备用 **Alt+M**）在 `review` 与 `manual` 之间切换，保留未提交的草稿；也可输入 `/approval review`、`/approval manual`，或用 `/approval` 切换。底栏和 `/status` 显示当前权限模式。交互选择仅影响本进程，重启恢复启动设置，不写配置、不调用模型。任务执行及审批期间不切换模式；`allow-all` 不参与快捷循环，须重启并显式选择其他模式。
+
+原生计划检查失败、模型失败、超时、答复无效、建议人工确认或审核额度耗尽，都不会自动批准原命令；交互终端转 `y/N`，管道模式拒绝。原生查询执行时若发现目录身份变化，则中止，不自动降级执行 shell。同一任务内完全相同且仍有效的 AI 批准计划可复用；新任务和重新启动后不复用，手动批准也不扩大后续权限。
+
+审核模型默认沿用主连接和格式，也可以单独设置 `permissions.reviewer.provider/model/base-url/api-format/api-key/api-key-env/header-env`。例如只设置 `reviewer: {model: YOUR_REVIEW_MODEL_ID}` 可使用同一厂商的另一模型；只设置 `reviewer: {api-format: responses}` 可在同一连接改用 Responses，并继承密钥和请求头。更换厂商或端点时不会自动转发主模型密钥和额外请求头；请配置审核凭据，或使用目标厂商默认密钥变量。跨厂商省略 `base-url` 时使用目标厂商默认地址。同一连接省略 `header-env` 会继承，显式 `{}` 会清空。完整例子见[使用手册](使用手册.md)。
+
+审核请求包含当前命令、规范工作区、实际执行参数，以及有界的用户消息和工具调用摘要；不转发助手自由文本、工具结果、写入正文或替换正文。分类器没有执行工具，只能返回结构化 `decision` 和可选简短 `reason`。原始模型理由不显示或写入日志，界面使用固定审核状态提示；返回格式无效即转人工。
+
+只有实际调用审核模型才增加一次可能付费的请求。默认每项任务最多 8 次、每次最多等待 10 秒、输出上限 192 tokens；前两项分别由 `permissions.max-auto-reviews`（1～32）和 `permissions.review-timeout-seconds`（1～30）控制。JSON `review` 单列请求、用量、`localApprovals`（本地放行数）及 `elapsedMillis`（等待审核模型的累计毫秒数），`cacheHits` 是批准结果复用次数。顶层 `usage` 包含主模型与审核已报告用量；缺失用量不表示免费。`--quiet` 隐藏普通审核进度，仍保留人工确认提示。
 
 命令在工作区启动，但拥有当前用户的文件系统和网络权限；自动审核不是操作系统沙箱。文件工具会强制检查规范工作区包含关系。命令有超时、有界输出，并尽力清理子孙进程。执行不可信代码时，应使用隔离的操作系统或容器环境。
 
@@ -155,7 +218,7 @@ CodeGo 仅用于已归档的真实验证。[configs/codego.example.yaml](configs
 
 运行 `python scripts/evaluate_multifile.py --repeat 2`，可执行成对的跨文件 API、发票溢出和分隔符修复，包括过期哈希拒绝、编译和未修改文件检查。独立检查器会拒绝有缺陷或只修复部分文件的对照组。这扩展了离线工作流覆盖，但不测量模型推理能力或真实厂商节省量。
 
-`openai`、`openai-compatible`、`ollama`、`azure-openai` 和 `langchain4j-openai` 在生成过程中流式输出文本。网关拒绝流式请求时可用 `--no-stream`；网关返回普通 JSON 也会被接受，不会重试或编造增量。Responses、Anthropic 和 Gemini 仍为同步方式。本地 SSE 测试会保持完成状态未释放，直到观察到首个文本增量，并验证分片工具参数、用量、超时和中断。这证明可以提前交付文本，不代表测得了生产延迟改善。详见[原生流式输出](docs/NATIVE_STREAMING.md)。
+`openai`、`openai-compatible`、`openai-responses`、`ollama`、`azure-openai` 和 `langchain4j-openai` 在生成过程中流式输出文本。网关拒绝流式请求时可用 `--no-stream`；网关返回普通 JSON 也会被接受，不编造增量。Responses 使用自己的 SSE 事件和 `/responses` 接口，支持函数与加密推理回放；非流式恢复不切换到 Chat。Anthropic 和 Gemini 仍为同步方式。本地 SSE 测试验证提前文本、分片工具参数、用量、超时和中断。这证明可以提前交付文本，不代表测得了生产延迟改善。详见[原生流式输出](docs/NATIVE_STREAMING.md)。
 
 `mvn verify` 测试核心行为、模拟厂商契约、配置、会话和文件系统边界。打包冒烟脚本通过实际 jar 执行搜索/读取/编辑，编译并运行临时 Java 文件，再恢复保存的会话。Windows 会跳过需要符号链接权限或 POSIX 权限的测试；Windows junction 包含关系测试会执行。
 

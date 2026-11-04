@@ -28,8 +28,9 @@ final class NativeStreamTransport {
     static final int MAX_EVENT_CHARS = 1024 * 1024;
     private NativeStreamTransport() {}
 
-    static String exchange(HttpClient client, HttpRequest request, Duration timeout, Predicate<String> onEvent) {
+    static String exchange(HttpClient client, HttpRequest request, Duration timeout, Predicate<String> onEvent, ProviderErrors errors) {
         var body = new AtomicReference<InputStream>();
+        var httpFailure = new AtomicReference<ProviderException>();
         var abandoned = new AtomicBoolean();
         var executor = Executors.newSingleThreadExecutor(Thread.ofVirtual().name("harness-native-stream").factory());
         var pending = executor.submit(() -> {
@@ -39,7 +40,13 @@ final class NativeStreamTransport {
                 body.set(stream);
                 if (abandoned.get()) throw new ProviderException("流式请求已取消");
                 if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                    throw new ProviderException("流式请求失败，HTTP 状态码 " + response.statusCode(), response.statusCode());
+                    int status = response.statusCode();
+                    String message = "流式请求失败，HTTP 状态码 " + status;
+                    httpFailure.set(httpError(message + "；厂商错误详情读取未完成", status));
+                    try { message += errors.read(stream); }
+                    catch (IOException unreadable) { message += "；厂商错误详情读取失败"; }
+                    // 兼容网关可能以 400 拒绝 stream 或 stream_options；重试由调用方统一管理。
+                    throw httpError(message, status);
                 }
                 String media = response.headers().firstValue("content-type").orElse("")
                         .split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
@@ -70,16 +77,21 @@ final class NativeStreamTransport {
             Thread.currentThread().interrupt();
             throw new ProviderException("流式请求已中断");
         } catch (TimeoutException expired) {
-            throw new ProviderException("流式请求超时");
+            if (httpFailure.get() != null) throw httpFailure.get();
+            throw TransportErrors.streamTimeout(timeout);
         } catch (ExecutionException failed) {
             if (failed.getCause() instanceof ProviderException provider) throw provider;
-            throw new ProviderException("流式请求失败");
+            throw TransportErrors.stream(failed.getCause());
         } finally {
             abandoned.set(true);
             pending.cancel(true);
             closeAsync(body.getAndSet(null));
             executor.shutdownNow();
         }
+    }
+
+    private static ProviderException httpError(String message, int status) {
+        return status == 400 ? ProviderException.streamFailure(message, status) : new ProviderException(message, status);
     }
 
     private static void closeAsync(InputStream stream) {

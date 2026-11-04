@@ -165,6 +165,36 @@ class HarnessCliTest {
         assertTrue(invalidConfig.err.contains("agent.parallel-reads 必须在 1 到 8 之间"));
     }
 
+    @Test void readonlyIntentRejectsHiddenWriteEvenWithAllowCommands() throws Exception {
+        var requests = new CopyOnWriteArrayList<JsonNode>();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/v1/chat/completions", exchange -> {
+            requests.add(JSON.readTree(exchange.getRequestBody()));
+            boolean tool = requests.size() % 2 == 1;
+            Map<String, Object> message = tool
+                    ? Map.of("role", "assistant", "tool_calls", List.of(Map.of("id", "write1", "type", "function", "function",
+                        Map.of("name", "write_file", "arguments", "{\"path\":\"intent-output.txt\",\"content\":\"ok\"}"))))
+                    : Map.of("role", "assistant", "content", "完成");
+            byte[] response = JSON.writeValueAsBytes(Map.of("choices", List.of(Map.of("message", message, "finish_reason", tool ? "tool_calls" : "stop"))));
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+        try {
+            for (String mode : List.of("analyze", "edit")) {
+                Result result = execute("--workspace", workspace.toString(), "--provider", "openai-compatible", "--base-url",
+                        "http://127.0.0.1:" + server.getAddress().getPort() + "/v1", "--api-key-env", "HARNESS_TEST_UNUSED_KEY",
+                        "--model", "fixture", "--no-stream", "--allow-commands", "--intent", mode, "--json", "run", "任务");
+                assertEquals(0, result.code, result.err);
+                assertEquals(mode, JSON.readTree(result.out).path("intent").path("mode").asText());
+                assertEquals(mode.equals("edit"), Files.exists(workspace.resolve("intent-output.txt")));
+            }
+            assertTrue(requests.get(1).path("messages").toString().contains("工具不可用"));
+            assertEquals(4, requests.size());
+        } finally { server.stop(0); }
+    }
+
     private static Result execute(String... arguments) {
         CommandLine cli = HarnessCli.commandLine();
         StringWriter out = new StringWriter(), err = new StringWriter();

@@ -22,6 +22,9 @@ final class CompletingTerminalInput implements TerminalInput {
     private Runnable escapeHandler = () -> { };
     private TaskKeyMonitor taskKeys;
     private boolean taskInput;
+    private boolean approvalModeToggle;
+    private String inputDraft;
+    private boolean modeSwitchAllowed;
 
     static TerminalInput open() {
         if ("dumb".equals(System.getenv("TERM"))) return null;
@@ -58,10 +61,21 @@ final class CompletingTerminalInput implements TerminalInput {
         reader.getKeyMaps().get(LineReader.MAIN).bind(new org.jline.reader.Reference(LineReader.COMPLETE_WORD), "\t");
         reader.getWidgets().put("ylc-escape", () -> escapeLine(false));
         reader.getWidgets().put("ylc-double-escape", () -> escapeLine(true));
+        reader.getWidgets().put("ylc-approval-toggle", () -> {
+            // 审批及回退选择共用读取器，但不是任务输入框，不能把按键变成审批答案。
+            if (!modeSwitchAllowed) return true;
+            inputDraft = reader.getBuffer().toString();
+            approvalModeToggle = true;
+            reader.getBuffer().clear();
+            reader.callWidget(LineReader.ACCEPT_LINE);
+            return true;
+        });
         var keys = reader.getKeyMaps().get(LineReader.MAIN);
         keys.setAmbiguousTimeout(80);
         keys.bind(new org.jline.reader.Reference("ylc-escape"), "\033");
         keys.bind(new org.jline.reader.Reference("ylc-double-escape"), "\033\033");
+        keys.bind(new org.jline.reader.Reference("ylc-approval-toggle"), "\033[Z");
+        keys.bind(new org.jline.reader.Reference("ylc-approval-toggle"), "\033m");
     }
 
     private boolean escapeLine(boolean twice) {
@@ -76,14 +90,23 @@ final class CompletingTerminalInput implements TerminalInput {
     @Override public boolean editsLine() { return true; }
     @Override public String readLine() throws IOException { return readCommand("", List::of); }
     @Override public String readCommand(String prompt, Supplier<List<String>> candidates) throws IOException {
+        return readCommand(prompt, candidates, null, false);
+    }
+    @Override public String readCommand(String prompt, Supplier<List<String>> candidates, String initialBuffer) throws IOException {
+        return readCommand(prompt, candidates, initialBuffer, true);
+    }
+    private String readCommand(String prompt, Supplier<List<String>> candidates, String initialBuffer,
+                               boolean modeSwitchAllowed) throws IOException {
         pauseTaskInput();
         this.candidates = candidates;
-        try { return reader.readLine(prompt); }
+        this.modeSwitchAllowed = modeSwitchAllowed;
+        try { return reader.readLine(prompt, null, (org.jline.reader.MaskingCallback) null, initialBuffer); }
         catch (EndOfFileException end) { return null; }
         catch (UserInterruptException interrupted) { interruptHandler.run(); return null; }
         catch (java.io.IOError failure) { throw new IOException("无法读取终端输入", failure.getCause()); }
         finally {
             this.candidates = List::of;
+            this.modeSwitchAllowed = false;
             if (taskInput) resumeTaskInput();
         }
     }
@@ -93,6 +116,16 @@ final class CompletingTerminalInput implements TerminalInput {
     }
     @Override public void startTaskInput() { taskInput = true; resumeTaskInput(); }
     @Override public void stopTaskInput() { taskInput = false; pauseTaskInput(); }
+    @Override public boolean takeApprovalModeToggle() {
+        boolean requested = approvalModeToggle;
+        approvalModeToggle = false;
+        return requested;
+    }
+    @Override public String takeInputDraft() {
+        String draft = inputDraft;
+        inputDraft = null;
+        return draft;
+    }
     private void resumeTaskInput() {
         if (taskKeys == null) taskKeys = new TaskKeyMonitor(terminal, () -> escapeHandler.run(), reader::runMacro);
     }

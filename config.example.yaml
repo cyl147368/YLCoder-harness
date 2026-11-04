@@ -3,7 +3,14 @@
 # 旧配置中的 workspace 字段保留解析兼容，但 CLI 忽略其值，无需填写。
 provider: openai-compatible
 model: YOUR_MODEL_ID
+# /model 无参数时优先显示以下候选；还会尝试读取兼容网关的 /v1/models。
+# 网关不支持模型列表时可关闭自动发现，只使用这里和当前/历史模型。
+models: []
+# discover-models: true
 base-url: https://your-provider.example/v1
+# 自定义网关支持 Responses 时取消下行注释；base-url 不要追加 /responses。
+# 仅 openai、openai-compatible、openai-responses 支持；省略保持 provider 默认协议。
+# api-format: responses
 # 可直接填写自己的密钥；非空时无需环境变量。请勿提交或分享私有配置。
 api-key: ""
 api-key-env: HARNESS_API_KEY
@@ -23,21 +30,51 @@ web:
 agent:
   # 不兼容流式的网关设为 false；交互中也可用 /stream off 临时关闭。
   stream: true
-  # 兼容流式错误且尚无文本输出时，自动改用非流式重试一次；false 关闭自动重试。
+  # 流式 HTTP 400、可降级的流内错误或网络断连/超时，且尚无文本输出时，等待 1、2、4 秒改用非流式重试，最多 3 次；false 关闭。
   stream-fallback: true
-  max-iterations: 30
   parallel-reads: 1
   context-budget-tokens: 48000
   token-counter: utf16
   max-tool-output-chars: 12000
   max-output-tokens: 3000
 
+# 默认在当前工作区保存提示词、回复、错误和工具过程；交互中 /logs 查看位置。
+# 重复提示词用引用占位，工具结果截取摘要；不增加模型请求或消耗 token。
+trace:
+  enabled: true
+  tool-result-max-chars: 2000
+
 permissions:
-  # 默认让独立的无工具子 agent 审核有限的只读命令；其余操作仍需手动确认。
+  # review：安全查询快速路径；其他受支持查询和常规 Maven 3.9.x 构建交 AI 审核，失败时人工确认。
+  # Maven 插件/测试可写文件和联网，-o 仅限制依赖下载；自动审核不是沙箱。
+  # manual：人工确认 shell；allow-all：预先允许 shell，不扩大工作区文件工具权限。
+  # 未设置 mode 时沿用旧配置：allow-commands 优先，其次 auto-review。
+  # 显式设置 mode 后，以 mode 为准，不再使用这两个旧布尔开关。
+  mode: review
   auto-review: true
   review-timeout-seconds: 10
   max-auto-reviews: 8
-  # 以下为全部预先放行；与低风险自动审核不同。
+  # 空对象沿用主模型和协议；仅指定 model 可使用同一厂商的另一模型审核。
+  reviewer: {}
+  # reviewer:
+  #   model: YOUR_REVIEW_MODEL_ID
+  # 仅更改 api-format 会保留同一连接的密钥和请求头；支持 chat 或 responses。
+  # reviewer:
+  #   api-format: responses
+  # 更换厂商或 base-url 时，主模型密钥和请求头不会自动转发。
+  # 另行填写 api-key、api-key-env，或使用目标厂商默认环境变量。
+  # 仅切换 provider 而不填 base-url 时，使用目标厂商默认地址。
+  # reviewer:
+  #   provider: openai-compatible
+  #   model: YOUR_REVIEW_MODEL_ID
+  #   base-url: https://your-review-provider.example/v1
+  #   api-format: responses
+  #   api-key: ""
+  #   api-key-env: HARNESS_REVIEW_API_KEY
+  #   header-env: {}
+  # 同一连接下省略 header-env 会继承主模型请求头，{} 可清空。
+  # api-key-env: "" 可禁止继承或读取密钥，适合无需认证的本地模型。
+  # 旧开关为兼容保留；allow-mcp-tools 仍独立控制 MCP 授权。
   allow-commands: false
   allow-mcp-tools: false
 mcp:

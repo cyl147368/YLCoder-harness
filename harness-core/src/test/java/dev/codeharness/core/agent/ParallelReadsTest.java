@@ -236,13 +236,15 @@ class ParallelReadsTest {
         }
     }
 
-    @Test void maxIterationDoesNotExecuteParallelCalls() {
+    @Test void continuesExecutingParallelCallsPastLegacyIterationLimit() {
         var executed = new AtomicInteger();
         var read = tool("read", true, arg -> { executed.incrementAndGet(); return "read"; });
-        var result = agent(List.of(read), calls("read", 3), new AtomicInteger()).run("read",
+        var modelCalls = new AtomicInteger();
+        var result = agent(List.of(read), calls("read", 3), modelCalls).run("read",
                 new AgentRunOptions("test", 1, 12000, 100, 1000, () -> false, 4));
-        assertEquals(AgentResult.Status.MAX_ITERATIONS, result.status());
-        assertEquals(0, executed.get());
+        assertEquals(AgentResult.Status.COMPLETED, result.status());
+        assertEquals(3, executed.get());
+        assertEquals(2, modelCalls.get());
     }
 
     @Test void failedAssistantCheckpointStartsNoReads() {

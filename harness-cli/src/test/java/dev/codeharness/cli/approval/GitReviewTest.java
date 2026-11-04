@@ -51,10 +51,11 @@ class GitReviewTest {
         var tools = WorkspaceTools.createWithCommandApproval(root, request -> {
             var outcome = reviewer.review(request);
             if (!outcome.approved()) return CommandApproval.Decision.denied();
+            assertEquals(CommandReview.Status.LOCAL_APPROVED, outcome.status());
             assertEquals(git, Path.of(outcome.arguments().getFirst()));
             assertTrue(outcome.arguments().contains("--no-optional-locks"));
             assertTrue(outcome.arguments().contains("core.fsmonitor=false"));
-            return CommandApproval.Decision.direct(outcome.arguments());
+            return outcome.decision();
         });
         for (String text : List.of("git branch --show-current")) {
             String result = tools.find("run_command").orElseThrow().execute(JSON.writeValueAsString(java.util.Map.of("command", text)));
@@ -69,10 +70,11 @@ class GitReviewTest {
         assertFalse(Files.exists(root.resolve("filter-invoked.txt")));
         assertArrayEquals(oldIndex, Files.readAllBytes(index));
         assertEquals(oldTime, Files.getLastModifiedTime(index));
-        assertEquals(1, reviewer.stats().requests(), "status/diff 不得发送给模型后冒险自动放行");
+        assertEquals(0, reviewer.stats().requests(), "分支走本地快速路径；含过滤器的 status/diff 不得进入模型后冒险放行");
+        assertEquals(1, reviewer.stats().localApprovals());
     }
 
-    @Test void commonStatusVariantsReachAiAndRunWithoutHelpersOrIndexWrites() throws Exception {
+    @Test void 常见状态查询通过本地安全检查且不调用模型或修改索引() throws Exception {
         Path root = Files.createDirectory(temporary.resolve("ordinary-repo"));
         Path git = availableGit(root);
         command(git, root, "init", "--quiet");
@@ -91,8 +93,9 @@ class GitReviewTest {
         var tools = WorkspaceTools.createWithCommandApproval(root, request -> {
             var result = reviewer.review(request);
             assertTrue(result.approved(), result.reason());
+            assertEquals(CommandReview.Status.LOCAL_APPROVED, result.status());
             assertTrue(result.arguments().contains("--ignore-submodules=all"));
-            return CommandApproval.Decision.direct(result.arguments());
+            return result.decision();
         });
         List<String> variants = List.of("git status", "git status --short", "git status -s", "git status --porcelain",
                 "git status --porcelain=v1", "git status --porcelain=v2", "git status -sb",
@@ -104,35 +107,33 @@ class GitReviewTest {
             assertTrue(result.startsWith("退出码：0"), result);
             assertTrue(result.contains("tracked.txt") && result.contains("new.txt"), result);
         }
-        assertEquals(variants.size(), received.size());
-        for (var request : received) {
-            assertTrue(request.tools().isEmpty());
-            assertEquals(2, request.messages().size());
-            assertTrue(request.messages().getFirst().content().contains("工作树状态"));
-            assertFalse(request.messages().getLast().content().contains("private-file-content"));
-        }
+        assertTrue(received.isEmpty(), "本地只读查询无需上传工作区或请求模型");
+        assertEquals(variants.size(), reviewer.stats().localApprovals());
         assertFalse(Files.exists(root.resolve("helper-invoked.txt")));
         assertFalse(Files.exists(root.resolve("pager-invoked.txt")));
         assertArrayEquals(before, Files.readAllBytes(index));
         assertEquals(timestamp, Files.getLastModifiedTime(index));
         assertTrue(reviewer.review(new CommandApproval.Request(root.toRealPath(), "git status --short")).approved());
-        assertEquals(1, reviewer.stats().cacheHits());
+        assertEquals(0, reviewer.stats().cacheHits(), "本地查询每次重验安全边界，不依赖 AI 缓存");
         command(git, root, "config", "filter.new.clean", "echo must-not-run");
         var blocked = reviewer.review(new CommandApproval.Request(root.toRealPath(), "git status --short"));
         assertFalse(blocked.approved(), "修改仓库配置后不能复用旧批准");
+        assertEquals(CommandReview.Status.SAFETY_CHECK, blocked.status());
         assertTrue(blocked.reason().contains("过滤器"));
-        assertEquals(variants.size(), received.size());
+        assertTrue(received.isEmpty());
     }
 
-    @Test void aiCanDenyOrdinaryStatusAndChangedConfigurationInvalidatesItsApproval() throws Exception {
+    @Test void 清理预览可被模型转人工且配置变化会使批准失效() throws Exception {
         Path root = Files.createDirectory(temporary.resolve("review-change"));
         Path git = availableGit(root);
         command(git, root, "init", "--quiet");
-        var request = new CommandApproval.Request(root.toRealPath(), "git status --short");
+        var request = new CommandApproval.Request(root.toRealPath(), "git clean --dry-run -d");
         var denied = new CommandReview(ignored -> ChatResponse.text("{\"decision\":\"manual\"}"),
                 Duration.ofSeconds(2), 8, ignored -> {});
-        assertFalse(denied.review(request).approved());
-        assertEquals(1, denied.stats().requests(), "普通状态命令仍需 AI 审核，不是直接放行");
+        var deniedOutcome = denied.review(request);
+        assertFalse(deniedOutcome.approved());
+        assertEquals(CommandReview.Status.AI_MANUAL, deniedOutcome.status());
+        assertEquals(1, denied.stats().requests(), "清理预览仍进入 AI 审核");
         var changing = new CommandReview(ignored -> {
             try { command(git, root, "config", "status.showUntrackedFiles", "no"); }
             catch (Exception failure) { throw new IllegalStateException(failure); }
@@ -140,6 +141,7 @@ class GitReviewTest {
         }, Duration.ofSeconds(2), 8, ignored -> {});
         var result = changing.review(request);
         assertFalse(result.approved());
+        assertEquals(CommandReview.Status.CONDITIONS_CHANGED, result.status());
         assertTrue(result.reason().contains("发生变化"));
     }
 
@@ -150,11 +152,11 @@ class GitReviewTest {
         AtomicInteger calls = new AtomicInteger();
         var reviewer = new CommandReview(request -> { calls.incrementAndGet(); return ChatResponse.text("{\"decision\":\"approve\"}"); },
                 Duration.ofSeconds(1), 8, ignored -> {});
-        for (String text : List.of("git status && echo bad", "git -c core.fsmonitor=bad status", "git diff", "git show",
-                "git diff --output=out.txt", "git diff --stat ../outside", "git -C .. status", "git push", "git log -p",
+        for (String text : List.of("git -c core.fsmonitor=bad status", "git diff --no-index . ../outside",
+                "git diff --output=out.txt", "git diff --stat ../outside", "git -C .. status", "git push",
                 "git clean -fd", "git clean -fdx", "git clean --force", "git clean -n && git clean -fd",
-                "git clean -n -f", "git clean -nd ../outside", "git status --short --untracked-files=all > out.txt",
-                "git status --short --porcelain=v2", "git status --untracked-files=bad")) {
+                "git clean -n -f", "git clean -nd ../outside",
+                "git status --short --untracked-files=all > out.txt")) {
             assertFalse(reviewer.review(new CommandApproval.Request(root.toRealPath(), text)).approved(), text);
         }
         Path child = Files.createDirectory(root.resolve("child"));
@@ -181,7 +183,7 @@ class GitReviewTest {
             assertTrue(result.approved(), result.reason());
             assertTrue(result.arguments().contains("--dry-run"));
             assertFalse(result.arguments().contains("-f"));
-            return CommandApproval.Decision.direct(result.arguments());
+            return result.decision();
         });
         for (String query : List.of("git clean -nd", "git clean -dn", "git clean --dry-run -d", "git clean -d -n")) {
             String output = tools.find("run_command").orElseThrow().execute(JSON.writeValueAsString(java.util.Map.of("command", query)));
@@ -191,6 +193,11 @@ class GitReviewTest {
             assertTrue(Files.exists(nested.resolve("also-keep.txt")));
         }
         assertEquals(4, reviewer.stats().requests());
+        var repeated = reviewer.review(new CommandApproval.Request(root.toRealPath(), "git clean -nd"));
+        assertTrue(repeated.approved());
+        assertEquals(CommandReview.Status.CACHED_APPROVED, repeated.status());
+        assertEquals(1, reviewer.stats().cacheHits());
+        assertEquals(4, reviewer.stats().requests(), "相同执行计划应复用 AI 审核结果");
         assertFalse(Files.exists(root.resolve("helper-invoked.txt")));
     }
 

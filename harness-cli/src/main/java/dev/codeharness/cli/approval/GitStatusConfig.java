@@ -19,6 +19,10 @@ final class GitStatusConfig {
     private static final Pattern VARIABLE = Pattern.compile("^([A-Za-z][A-Za-z0-9-]*)[ \\t]*(?:=.*)?$");
 
     static String fingerprint(Path directory) throws IOException {
+        return fingerprint(directory, true);
+    }
+
+    static String fingerprint(Path directory, boolean mayReadWorkingTree) throws IOException {
         Path file = directory.resolve("config");
         if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS) || !file.toRealPath().equals(file))
             throw new Ineligible("Git 配置不是工作区内的普通文件，需要人工确认");
@@ -39,7 +43,8 @@ final class GitStatusConfig {
                 var header = SECTION.matcher(line);
                 if (!header.matches()) throw uncertain();
                 section = header.group(1).toLowerCase(Locale.ROOT);
-                if (section.equals("filter")) throw new Ineligible("仓库配置了 Git clean/process 过滤器，状态查询可能执行脚本，需要人工确认");
+                if (mayReadWorkingTree && section.equals("filter"))
+                    throw new Ineligible("仓库配置了 Git clean/process 过滤器，只读查询可能执行脚本，需要人工确认");
                 if (section.equals("include") || section.equals("includeif"))
                     throw new Ineligible("仓库使用了 Git 外部或条件配置，无法仅在当前工作区确认风险，需要人工确认");
             } else {
@@ -50,7 +55,7 @@ final class GitStatusConfig {
                 String key = variable.group(1).toLowerCase(Locale.ROOT);
                 if (section.equals("extensions") && key.equals("partialclone")
                         || section.equals("remote") && (key.equals("promisor") || key.equals("partialclonefilter")))
-                    throw new Ineligible("仓库使用部分克隆，状态查询可能触发联网补取对象，需要人工确认");
+                    throw new Ineligible("仓库使用部分克隆，只读查询可能触发联网补取对象，需要人工确认");
             }
         }
         try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)); }

@@ -7,7 +7,22 @@ import java.util.List;
 final class ReadOnlyQuery {
     private ReadOnlyQuery() {}
 
+    static boolean locallySafe(String command) {
+        List<String> git = git(command);
+        return git != null && !git.getFirst().equals("clean") || switch (command) {
+            case "ls", "ls -la", "ls -al", "dir", "dir /a" -> true;
+            default -> false;
+        } || findAgents(command);
+    }
+
+    private static boolean findAgents(String command) {
+        return command.equals("find . -name AGENTS.md -not -path './.git/*' -not -path './.harness/*'")
+                || command.equals("find . -name AGENTS.md -not -path './.git/*'");
+    }
+
     static List<String> git(String command) {
+        if (command.startsWith("git diff")) return GitDiffQuery.parse(command);
+        if (command.startsWith("git log")) return GitLogQuery.parse(command);
         String[] words = command.split(" +", -1);
         if (words.length < 2 || !words[0].equals("git")) return null;
         if (command.equals("git branch --show-current")) return List.of("branch", "--show-current");
@@ -57,6 +72,10 @@ final class ReadOnlyQuery {
     }
 
     static List<String> ripgrep(String command) {
+        // 旧的外部程序路径不能绕过原生查询的长度、参数数量或模式边界。
+        if (!dev.codeharness.cli.tools.NativeReadOnlyQuery.supports(command)) return null;
+        if (findAgents(command)) return List.of("--no-config", "--files", "--hidden", "--glob", "AGENTS.md",
+                "--glob", "!.git", "--glob", "!.harness", "--", ".");
         String[] words = command.split(" +", -1);
         if (words.length < 2 || !words[0].equals("rg")) return null;
         boolean files = false, hidden = false, agents = false;

@@ -25,7 +25,7 @@ class WorkspaceCleanupInteractionTest {
     @TempDir Path temporary;
 
     @Test void onlyActualDeletionAsksUserAndSessionRemainsUsableAfterClean() throws Exception {
-        for (String tool : List.of("git", "rg")) {
+        for (String tool : List.of("git")) {
             try {
                 var process = new ProcessBuilder(tool, "--version").redirectErrorStream(true).start();
                 process.getInputStream().readAllBytes();
@@ -81,8 +81,8 @@ class WorkspaceCleanupInteractionTest {
                     "--no-color", "--no-stream", "--quiet");
             assertEquals(0, code, out + "\n" + err);
         } finally { server.stop(0); }
-        assertEquals(3, reviews.size(), "三条只读检查都必须进入 AI 审核");
-        assertEquals(readCommands, reviews.stream().map(request -> {
+        assertEquals(1, reviews.size(), "仅清理预览进入 AI 审核；Git 状态和原生文件名查询无需模型");
+        assertEquals(List.of("git clean -nd"), reviews.stream().map(request -> {
             try { return JSON.readTree(request.path("messages").get(1).path("content").asText()).path("command").asText(); }
             catch (Exception failure) { throw new AssertionError(failure); }
         }).toList());
@@ -94,7 +94,8 @@ class WorkspaceCleanupInteractionTest {
         for (JsonNode message : mainRequests.get(1).path("messages")) {
             if (!message.path("role").asText().equals("tool")) continue;
             assertTrue(message.path("content").asText().startsWith("退出码：0"), message.toString());
-            assertFalse(message.path("content").asText().contains(".harness"), message.toString());
+            assertFalse(message.path("content").asText().contains(".harness/"), message.toString());
+            assertFalse(message.path("content").asText().contains(".harness\\"), message.toString());
         }
         assertTrue(out.toString().contains("会话可以继续") && out.toString().contains("历史对话"), out.toString());
         SessionStore store = new SessionStore(workspace);

@@ -24,6 +24,7 @@ final class TerminalUi implements AutoCloseable {
     private String provider = "";
     private String model = "";
     private String host = "";
+    private String approvalMode = "review";
     private BottomStatusBar bottom;
     private UsageDashboard.Snapshot currentTask = UsageDashboard.Snapshot.empty("current-task");
     private UsageDashboard.Snapshot currentProcess = UsageDashboard.Snapshot.empty("current-process");
@@ -33,11 +34,22 @@ final class TerminalUi implements AutoCloseable {
     private int tools;
     private long taskStarted;
     private double elapsedSeconds;
+    private final java.util.function.LongSupplier clock;
+    private long lastBottomRefresh;
+    private boolean bottomRefreshed;
+    private static final long PHASE_REFRESH_NANOS = 250_000_000L;
 
     TerminalUi(PrintWriter out, PrintWriter err, boolean color) {
+        this(out, err, color, null, System::nanoTime);
+    }
+
+    /** 注入屏幕和单调时钟，验证高频增量事件不会驱动高频控制台绘制。 */
+    TerminalUi(PrintWriter out, PrintWriter err, boolean color, BottomStatusBar bottom, java.util.function.LongSupplier clock) {
         this.out = out;
         this.err = err;
         this.color = color;
+        this.bottom = bottom;
+        this.clock = clock;
     }
 
     static boolean supportsColor(boolean terminal) {
@@ -58,9 +70,9 @@ final class TerminalUi implements AutoCloseable {
         connection(provider, model, host);
         out.println();
         out.println("  " + style("1;36", "ylc") + "  " + style("90", "YLCoder-harness · " + brief(safe(workspace.toString()), 48)));
-        out.println("  " + style("36", "/project") + "  " + style("36", "/status") + "  "
+        out.println("  " + style("36", "/project") + "  " + style("36", "/model") + "  " + style("36", "/status") + "  "
                 + style("36", "/resume") + "  " + style("36", "/help") + "  " + style("36", "/exit"));
-        out.println("  " + style("90", "Esc 停下 · Esc Esc 回退对话 · Tab 补全"));
+        out.println("  " + style("90", "Esc 停下 · Esc Esc 回退对话 · Tab 补全 · Shift+Tab / Alt+M 切换审核"));
         out.println();
         out.flush();
     }
@@ -72,6 +84,7 @@ final class TerminalUi implements AutoCloseable {
     }
 
     void web(boolean enabled) { webEnabled = enabled; }
+    synchronized void approval(String mode) { approvalMode = mode; refreshBottom(); }
 
     String inputPrompt() { return "  " + style("1;36", "你 › "); }
 
@@ -94,14 +107,29 @@ final class TerminalUi implements AutoCloseable {
         refreshBottom();
     }
 
-    synchronized void phase(String value) { activity = value; refreshBottom(); }
+    synchronized void phase(String value) {
+        // 连续文本片段通常处于同一阶段；最多每 250ms 更新耗时，阶段变化和用量事件立即刷新。
+        if (value.equals(activity) && bottomRefreshed && clock.getAsLong() - lastBottomRefresh < PHASE_REFRESH_NANOS) return;
+        activity = value;
+        refreshBottom();
+    }
 
-    synchronized void retryStream() {
+    synchronized void retryStream(int retry, int maximum, long delayMillis, String reason) {
         beforeOutput();
-        err.println("  ↻ 流式暂不可用，正在自动改用非流式重试（1/1）…");
+        err.println("  ↻ 流式暂不可用，正在自动改用非流式重试（" + retry + "/" + maximum
+                + "），等待 " + delayMillis / 1000 + " 秒…");
+        err.println("    原因：" + safe(reason, 1200));
         err.flush();
-        mainRequests++;
-        phase("正在重试");
+        phase("等待重试 " + retry + "/" + maximum);
+    }
+
+    synchronized void retryRequest(int retry, int maximum, long delayMillis, String reason, boolean streaming) {
+        beforeOutput();
+        err.println("  ↻ 服务暂不可用，保持" + (streaming ? "流式" : "非流式") + "请求重试（" + retry + "/" + maximum
+                + "），等待 " + delayMillis / 1000 + " 秒…");
+        err.println("    原因：" + safe(reason, 1200));
+        err.flush();
+        phase("等待重试 " + retry + "/" + maximum);
     }
 
     private void refreshBottom() {
@@ -109,6 +137,8 @@ final class TerminalUi implements AutoCloseable {
             out.flush();
             err.flush();
             bottom.update(bottomLines(), color);
+            lastBottomRefresh = clock.getAsLong();
+            bottomRefreshed = true;
         }
     }
 
@@ -131,10 +161,16 @@ final class TerminalUi implements AutoCloseable {
         beforeOutput();
         section(out, "帮助");
         out.println("  /project  查看本地项目概览，不调用模型");
+        out.println("  /model    打开模型列表；也可输入 /model 序号 或 /model 模型名直接切换");
         out.println("  /status   查看连接、工作区、进程累计用量和完整会话 ID");
         out.println("  /resume   列出历史会话；/resume 序号或会话ID 切换后继续输入任务");
         out.println("  /history  查看最近历史；/history 页码 翻页，/history all 查看全部");
-        out.println("  /rewind   选择回退点；/rewind 序号 回到该提问之前，保留原会话（不撤销文件）");
+        out.println("  /logs     查看当前会话的提示词、模型回复和工具执行记录文件，不调用模型");
+        out.println("  /rewind   选择回退点；/rewind 序号 在当前会话回到该提问之前（不撤销文件）");
+        out.println("  /history previous  查看最近一次回退前的历史快照，不调用模型");
+        out.println("  /approval 切换 review/manual；也可指定 /approval review 或 /approval manual");
+        out.println("  /intent   查看意图；用 auto/chat/analyze/plan/edit/execute 指定下一项任务的分流模式");
+        out.println("  Shift+Tab（备用 Alt+M）在任务输入框切换审核模式，保留草稿；审批框和任务运行中不切换");
         out.println("  Esc       取消当前任务但保留会话；输入时清空草稿；500 毫秒内连按两次打开回退选择");
         out.println("  Tab       补全斜杠命令及参数；支持方向键编辑输入");
         out.println("  /stream   查看流式状态；/stream off 关闭，/stream on 开启");
@@ -145,6 +181,26 @@ final class TerminalUi implements AutoCloseable {
         out.println("  示例：分析当前项目，先查看目录和 README，再说明启动方式。");
         out.println("  请输入编程任务。任务会自动保存。输入 /exit 或按 Ctrl+C 退出。");
         out.println(saved ? "  继续会话：ylc resume " + safe(session) : "  尚未保存任何任务。请先提交任务，再继续此会话。");
+        out.println();
+        out.flush();
+    }
+
+    void logs(Path directory, java.util.List<Path> entries, Boolean enabled) {
+        beforeOutput();
+        section(out, "执行记录");
+        if (Boolean.FALSE.equals(enabled)) out.println("  当前配置已关闭记录（trace.enabled: false），已有文件仍可查看。");
+        out.println("  目录：" + safe(directory.toString(), 4096));
+        if (entries.isEmpty()) {
+            out.println("  暂无执行记录；启用后，下次提交任务时自动生成。");
+            out.println("  旧会话检查点无法还原以前每次实际请求；从启用此功能之后开始记录。");
+        } else {
+            for (int index = 0; index < entries.size(); index++) {
+                out.println("  " + (index + 1) + ". " + safe(entries.get(index).toString(), 4096));
+            }
+            out.println("  用编辑器打开上述 Markdown 文件即可查看；第 1 项最近更新。");
+            out.println("  记录含实际上下文、模型回复、重试与工具结果摘要；重复提示词可沿引用跳转。");
+        }
+        out.println("  每次任务一个文件；/resume 和 /rewind 后仍归在原会话目录。查看不调用模型。");
         out.println();
         out.flush();
     }
@@ -176,7 +232,7 @@ final class TerminalUi implements AutoCloseable {
             }
             out.println("  输入 /resume 1 恢复第 1 项，或 /resume 完整会话ID；输入其他内容可继续当前会话。");
         }
-        out.println("  仅查看当前工作区最近 20 个检查点；无效或损坏的检查点不会列出。此操作不调用模型。");
+        out.println("  从当前工作区最近 200 个检查点中列出最多 20 个有效会话；损坏记录不占名额。此操作不调用模型。");
         out.println();
         out.flush();
     }
@@ -212,6 +268,7 @@ final class TerminalUi implements AutoCloseable {
         field(out, "工作区", safe(workspace.toString()));
         field(out, "会话", safe(session) + (saved ? "（已保存）" : "（尚未提交任务）"));
         field(out, "联网", webEnabled ? "已开启 · 搜索与网页读取" : "已关闭");
+        field(out, "审核模式", approvalMode + " · Shift+Tab / /approval 切换 review/manual");
         if (saved) out.println("  继续会话：ylc resume " + safe(session));
         section(out, "进程累计");
         usage(out, process);
@@ -220,8 +277,12 @@ final class TerminalUi implements AutoCloseable {
         if (currentTask.requests() > 0) {
             section(out, "最近任务");
             usage(out, currentTask);
-            field(out, "命令审核", currentReview.requests() + " 次请求，自动通过 " + currentReview.approved()
-                    + " 次，复用 " + currentReview.cacheHits() + " 次，转人工 " + currentReview.manual() + " 次");
+            field(out, "命令审核", "本地 " + currentReview.localApprovals() + " 次，AI 请求 " + currentReview.requests()
+                    + " 次 / 通过 " + currentReview.aiApprovals() + " 次，复用 " + currentReview.cacheHits()
+                    + " 次，转人工 " + currentReview.manual() + " 次");
+            field(out, "审核开销", "输入 " + currentReview.usage().inputTokens() + " / 输出 "
+                    + currentReview.usage().outputTokens() + " token，" + currentReview.elapsedMillis() + " ms；未知用量 "
+                    + currentReview.unreportedRequests() + " 次");
             out.println("  审核用量已计入本轮已知用量；审核结果复用与模型 token 缓存不同。");
         }
         out.println();
@@ -233,7 +294,7 @@ final class TerminalUi implements AutoCloseable {
         this.showProgress = showProgress;
         taskNumber++;
         step = 0;
-        taskStarted = System.nanoTime();
+        taskStarted = clock.getAsLong();
         elapsedSeconds = 0;
         activity = "正在思考";
     }
@@ -296,17 +357,20 @@ final class TerminalUi implements AutoCloseable {
         refreshBottom();
     }
 
-    synchronized void toolError(String name) {
+    synchronized void toolError(String name, String detail) {
         if (!showProgress) return;
         beforeOutput();
-        err.println("    " + style("33", "工具未完成：" + safe(name) + "；正在把错误交给模型处理。"));
+        String reason = detail == null ? "" : detail;
+        if (reason.startsWith("工具失败：")) reason = reason.substring("工具失败：".length());
+        err.println("    " + style("33", "工具未完成：" + safe(name)
+                + (reason.isBlank() ? "" : "；原因：" + safe(reason)) + "；正在把错误交给模型处理。"));
         err.flush();
         refreshBottom();
     }
 
     synchronized void answer() {
-        beforeOutput();
         if (answerStarted) return;
+        beforeOutput();
         if (progressStarted) {
             err.flush();
         }
@@ -351,7 +415,7 @@ final class TerminalUi implements AutoCloseable {
 
     /** 四行关键状态代替重复大面板；累计详情可在 /status 查看。 */
     private java.util.List<String> bottomLines() {
-        double seconds = taskStarted == 0 ? elapsedSeconds : (System.nanoTime() - taskStarted) / 1_000_000_000.0;
+        double seconds = taskStarted == 0 ? elapsedSeconds : (clock.getAsLong() - taskStarted) / 1_000_000_000.0;
         String cached = compactAmount(currentTask.total().cachedInputTokens(), currentTask.cacheReportedRequests(), currentTask.requests());
         String rate = cacheRate(currentTask, true);
         String review = currentReview.cacheHits() == 0 && currentReview.manual() == 0 ? ""
@@ -361,7 +425,7 @@ final class TerminalUi implements AutoCloseable {
                 "  本轮  输入 token " + compactAmount(currentTask.total().inputTokens(), currentTask.inputReportedRequests(), currentTask.requests())
                         + " · 输出 token " + compactAmount(currentTask.total().outputTokens(), currentTask.outputReportedRequests(), currentTask.requests()),
                 "  缓存 token " + cached + " · 缓存命中率 " + rate,
-                "  ● " + activity + " · 联网" + (webEnabled ? "开" : "关") + " · " + mainRequests + "次主模型/" + currentReview.requests() + "次审核 · "
+                "  ● " + activity + " · 权限 " + approvalMode + " · 联网" + (webEnabled ? "开" : "关") + " · " + mainRequests + "次主模型/" + currentReview.requests() + "次审核 · "
                         + (tools == 0 ? "未调用工具" : tools + "次工具") + String.format(Locale.ROOT, " · %.1f 秒", seconds) + review);
     }
 
@@ -442,13 +506,17 @@ final class TerminalUi implements AutoCloseable {
 
     /** 配置和工具参数不能注入终端控制序列或换行。 */
     private static String safe(String text) {
+        return safe(text, 180);
+    }
+
+    private static String safe(String text, int limit) {
         if (text == null) return "";
         var cleaned = new StringBuilder();
-        text.codePoints().limit(180).forEach(code -> {
+        text.codePoints().limit(limit).forEach(code -> {
             if (Character.isISOControl(code) || Character.getType(code) == Character.FORMAT || code == 0x2028 || code == 0x2029) cleaned.append(' ');
             else cleaned.appendCodePoint(code);
         });
-        if (text.codePointCount(0, text.length()) > 180) cleaned.append('…');
+        if (text.codePointCount(0, text.length()) > limit) cleaned.append('…');
         return cleaned.toString();
     }
 }

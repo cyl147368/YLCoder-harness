@@ -40,17 +40,18 @@ public final class OpenAiCompatibleProvider implements ModelProvider {
                         .POST(java.net.http.HttpRequest.BodyPublishers.ofString(JSON.writeValueAsString(body)));
                 protocolHeaders().forEach(builder::setHeader);
                 config.headers().forEach(builder::setHeader);
-                var stream = new OpenAiChatStream(onTextDelta);
-                String fallback = NativeStreamTransport.exchange(client, builder.build(), config.timeout(), stream::onEvent);
+                var stream = new OpenAiChatStream(onTextDelta, errors);
+                String fallback = NativeStreamTransport.exchange(client, builder.build(), config.timeout(), stream::onEvent, errors);
                 if (fallback == null) return stream.response();
                 JsonNode payload = OpenAiChatStream.parse(fallback);
-                if (!payload.isObject() || payload.hasNonNull("error")) throw new ProviderException("Chat 流返回了无效的响应结构");
+                if (!payload.isObject() || payload.hasNonNull("error")) throw new ProviderException("Chat 流返回了无效的响应结构"
+                        + (payload.hasNonNull("error") ? errors.detail(payload) : ""));
                 return decode(payload);
             } catch (ProviderException failure) {
                 throw failure;
             } catch (Exception failure) {
                 if (failure instanceof InterruptedException) Thread.currentThread().interrupt();
-                throw new ProviderException("Chat 流式请求失败");
+                throw TransportErrors.stream(failure);
             }
         }
 

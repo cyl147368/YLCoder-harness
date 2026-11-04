@@ -136,8 +136,9 @@ def run_case(args, task, variant, repeat):
         config.write_text('provider: openai-compatible\nmodel: deterministic-fixture\napi-key-env: HARNESS_EVALUATION_UNUSED\n'
                           'agent:\n  max-iterations: 24\n  max-tool-output-chars: 12000\n', encoding='utf-8')
         server = None
+        # run 子命令不暴露 --max-iterations；传入会被 picocli 判为非法参数并以退出码 2 秒退，这里仅传受支持参数。
         command = [args.java, '-jar', str(JAR), '--config', str(pathlib.Path(args.config).resolve()) if args.live else str(config),
-                   '--workspace', str(workspace), '--context-budget', str(budget), '--max-iterations', str(args.max_iterations), '--quiet', '--json']
+                   '--workspace', str(workspace), '--context-budget', str(budget), '--quiet', '--json']
         if args.no_stream:
             command += ['--no-stream']
         if args.live:

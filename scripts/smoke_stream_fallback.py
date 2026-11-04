@@ -1,4 +1,4 @@
-"""用 localhost 流式错误验证打包/全局 CLI 的一次自动降级、用量和检查点。"""
+"""用 localhost 验证打包/全局 CLI 的三次递增降级重试、脱敏详情、用量和检查点。"""
 import argparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import threading
+import time
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -18,22 +19,30 @@ class Provider(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
             assert self.path == '/v1/chat/completions'
-            assert self.headers.get('Authorization') is None
+            assert self.headers.get('Authorization') == 'Bearer offline-fixture-key'
             request = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
             self.server.requests.append(request)
+            self.server.times.append(time.monotonic())
+            status = 200
             if len(self.server.requests) == 1:
                 assert request.get('stream')
-                body = b'data: {"error":{"message":"private-upstream-payload"}}\n\n'
+                body = b'data: {"error":{"message":"gateway unavailable offline-fixture-key"}}\n\n'
                 media = 'text/event-stream'
+                if self.server.failure_kind == 'http400':
+                    status, media = 400, 'application/json'
+                    body = b'{"error":{"message":"gateway unavailable offline-fixture-key"}}'
             else:
-                assert len(self.server.requests) == 2, '只能自动重试一次'
+                assert len(self.server.requests) <= 4, '最多自动重试三次'
                 assert not request.get('stream')
                 assert {k: v for k, v in self.server.requests[0].items() if k != 'stream'} == request
                 body = json.dumps({'choices': [{'message': {'role': 'assistant', 'content': '自动重试已完成'},
                                                 'finish_reason': 'stop'}],
                                    'usage': {'prompt_tokens': 13, 'completion_tokens': 4}}, ensure_ascii=False).encode('utf-8')
                 media = 'application/json'
-            self.send_response(200)
+                if len(self.server.requests) < 4 or self.server.always_fail:
+                    status = 400
+                    body = b'{"error":{"message":"unsupported parameter offline-fixture-key","code":"invalid_parameter","param":"max_tokens"}}'
+            self.send_response(status)
             self.send_header('Content-Type', media)
             self.send_header('Content-Length', str(len(body)))
             self.end_headers()
@@ -55,18 +64,21 @@ def main():
     target = ROOT / 'target'
     target.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='stream-fallback-', dir=target) as temporary:
-        for mode in ('json', 'interactive'):
-            workspace = Path(temporary) / mode
+        for failure_kind, mode, always_fail in ((kind, mode, fail) for kind in ('sse', 'http400') for mode in ('json', 'interactive') for fail in (False, True)):
+            workspace = Path(temporary) / (failure_kind + '-' + mode + ('-failed' if always_fail else '-success'))
             workspace.mkdir()
             with ThreadingHTTPServer(('127.0.0.1', 0), Provider) as server:
                 server.requests, server.errors = [], []
+                server.times = []
+                server.always_fail = always_fail
+                server.failure_kind = failure_kind
                 (workspace / 'offline.yaml').write_text(
-                    f'provider: openai-compatible\nmodel: fallback-fixture\napi-key-env: ""\n'
+                    f'provider: openai-compatible\nmodel: fallback-fixture\napi-key: offline-fixture-key\napi-key-env: ""\n'
                     f'base-url: http://127.0.0.1:{server.server_port}/v1\n', encoding='utf-8')
                 serving = threading.Thread(target=server.serve_forever, daemon=True)
                 serving.start()
                 try:
-                    arguments = ['--config', 'offline.yaml', '--no-color', '--max-iterations', '1']
+                    arguments = ['--config', 'offline.yaml', '--no-color', '--no-web']
                     if mode == 'json':
                         arguments += ['--json', 'run', 'offline-fixture']
                     environment = os.environ.copy()
@@ -74,32 +86,44 @@ def main():
                         environment.pop(name, None)
                     completed = subprocess.run(launcher + arguments, cwd=workspace, env=environment,
                                                input='offline-fixture\n/exit\n' if mode == 'interactive' else '',
-                                               capture_output=True, encoding='utf-8', timeout=20)
+                                               capture_output=True, encoding='utf-8', timeout=30)
                 finally:
                     server.shutdown()
                     serving.join(5)
-            assert completed.returncode == 0, completed.stderr
+            assert completed.returncode == (1 if always_fail else 0), completed.stderr
             assert not server.errors, server.errors
-            assert len(server.requests) == 2
-            assert 'private-upstream-payload' not in completed.stdout + completed.stderr
+            assert len(server.requests) == 4
+            gaps = [right - left for left, right in zip(server.times, server.times[1:])]
+            assert all(actual >= expected - .05 for actual, expected in zip(gaps, (1, 2, 4))), gaps
+            assert 'offline-fixture-key' not in completed.stdout + completed.stderr
             checkpoints = list((workspace / '.harness/sessions').glob('*.json'))
             assert len(checkpoints) == 1
             saved = json.loads(checkpoints[0].read_text(encoding='utf-8'))
-            assert saved['status'] == 'COMPLETED'
+            expected_status = 'FAILED' if always_fail else 'COMPLETED'
+            assert saved['status'] == expected_status
             assert [row['content'] for row in saved['transcript'] if row['role'] == 'USER'] == ['offline-fixture']
-            assert [row['content'] for row in saved['transcript'] if row['role'] == 'ASSISTANT'] == ['自动重试已完成']
+            assert [row['content'] for row in saved['transcript'] if row['role'] == 'ASSISTANT'] == ([] if always_fail else ['自动重试已完成'])
+            for stored in (workspace / '.harness').rglob('*'):
+                if stored.is_file():
+                    assert 'offline-fixture-key' not in stored.read_text(encoding='utf-8')
             if mode == 'json':
                 output = json.loads(completed.stdout)
-                assert output['status'] == 'COMPLETED'
-                assert output['usageReport']['requests'] == 2
-                assert output['usageReport']['inputReportedRequests'] == 1
-                assert output['usageReport']['total']['inputTokens'] == 13
+                assert output['status'] == expected_status
+                assert output['usageReport']['requests'] == 4
+                assert output['usageReport']['inputReportedRequests'] == (0 if always_fail else 1)
+                assert output['usageReport']['total']['inputTokens'] == (0 if always_fail else 13)
+                if always_fail:
+                    assert 'param=max_tokens' in output['error']
+                    assert '重试 3 次，仍未成功' in output['error']
                 assert not completed.stderr
             else:
-                assert '正在自动改用非流式重试（1/1）' in completed.stderr
-                assert '2次主模型' in completed.stdout
-                assert completed.stdout.count('自动重试已完成') == 1
-            results.append({'mode': mode, 'requests': len(server.requests), 'checkpoint': saved['status'], 'passed': True})
+                for attempt, delay in enumerate((1, 2, 4), 1):
+                    assert f'正在自动改用非流式重试（{attempt}/3），等待 {delay} 秒' in completed.stderr
+                assert 'param=max_tokens' in completed.stderr
+                assert '4次主模型' in completed.stdout
+                assert completed.stdout.count('自动重试已完成') == (0 if always_fail else 1)
+            results.append({'failure': failure_kind, 'mode': mode, 'requests': len(server.requests),
+                            'checkpoint': saved['status'], 'intervalSeconds': [round(gap, 3) for gap in gaps], 'passed': True})
     report = {'status': 'PASS', 'scope': 'localhost；实际 CLI 进程；无真实厂商调用', 'checks': results}
     options.result.parent.mkdir(parents=True, exist_ok=True)
     options.result.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')

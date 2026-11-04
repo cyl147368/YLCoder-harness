@@ -33,6 +33,30 @@ public final class OpenAiResponsesProvider implements ModelProvider {
                 .with(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
         Model(ProviderConfig config) { super(config); }
+
+        @Override public ChatResponse complete(ChatRequest request, java.util.function.Consumer<String> onTextDelta) {
+            try {
+                ObjectNode body = encode(request).put("stream", true);
+                var builder = java.net.http.HttpRequest.newBuilder(endpoint()).timeout(config.timeout())
+                        .setHeader("Content-Type", "application/json").setHeader("Accept", "text/event-stream, application/json")
+                        .POST(java.net.http.HttpRequest.BodyPublishers.ofString(JSON.writeValueAsString(body)));
+                protocolHeaders().forEach(builder::setHeader);
+                config.headers().forEach(builder::setHeader);
+                var stream = new OpenAiResponsesStream(onTextDelta, errors);
+                String fallback = NativeStreamTransport.exchange(client, builder.build(), config.timeout(), stream::onEvent, errors);
+                if (fallback == null) return stream.response(this::decode);
+                JsonNode payload = OpenAiResponsesStream.parse(fallback);
+                if (!payload.isObject() || !"completed".equals(payload.path("status").asText()) || payload.hasNonNull("error"))
+                    throw new ProviderException("Responses 流返回了未完成或无效的 JSON 响应" + errors.detail(payload));
+                return decode(payload);
+            } catch (ProviderException failure) {
+                throw failure;
+            } catch (Exception failure) {
+                if (failure instanceof InterruptedException) Thread.currentThread().interrupt();
+                throw TransportErrors.stream(failure);
+            }
+        }
+
         @Override protected URI defaultBaseUri() { return URI.create("https://api.openai.com/v1"); }
         @Override protected URI endpoint() { return resolve("/responses"); }
         @Override protected Map<String, String> protocolHeaders() {

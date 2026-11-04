@@ -20,6 +20,9 @@ public final class ToolRegistry {
         }
         this.tools = Collections.unmodifiableMap(indexed);
     }
+    public ToolRegistry filter(java.util.function.Predicate<Tool> allowed) {
+        return new ToolRegistry(tools.values().stream().filter(allowed).toList());
+    }
     public static ToolRegistry empty() { return new ToolRegistry(List.of()); }
     public Optional<Tool> find(String name) { return Optional.ofNullable(tools.get(name)); }
     public List<ToolDefinition> definitions() { return tools.values().stream().map(Tool::definition).toList(); }

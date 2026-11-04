@@ -3,7 +3,7 @@ package dev.codeharness.core.agent;
 import java.util.Objects;
 import java.util.function.BooleanSupplier;
 
-/** 每个任务的限制及取消回调。 */
+/** 每个任务的预算及取消回调。maxIterations 为兼容旧调用方保留，不再用于截断任务。 */
 public record AgentRunOptions(String systemPrompt, int maxIterations, int contextTokenBudget,
                               Integer maxOutputTokens, int maxToolOutputChars, BooleanSupplier cancelled, int maxParallelReads) {
     public AgentRunOptions {

@@ -142,8 +142,10 @@ def run_case(args, task, variant, repeat):
         prompt = task['prompt'] + (' 保留公开 API，仅修改现有生产源码文件。'
             '无关辅助文件的字节保持不变。按需检查相关文件，优先使用 edit_file 做集中修改，不执行 shell 命令。'
             '独立编译与断言在退出后执行；最后简要说明修改内容。')
+        # CLI 的 run 子命令不暴露 --max-iterations（迭代上限由 CLI 内部默认控制），
+        # 传入会导致 picocli 判定为无法识别参数并以退出码 2 秒退；这里仅传受支持的参数。
         command = [args.java, '-jar', str(JAR), '--config', str(config), '--workspace', str(workspace),
-            '--context-budget', str(budget), '--parallel-reads', '4', '--max-iterations', str(args.max_iterations),
+            '--context-budget', str(budget), '--parallel-reads', '4',
             '--quiet', '--json', 'run', prompt]
         environment = dict(os.environ)
         if args.offline:

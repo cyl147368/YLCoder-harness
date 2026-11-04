@@ -67,11 +67,37 @@ class InteractiveResumeTest {
         });
         server.start();
         config = workspace.resolve("offline.yaml");
-        Files.writeString(config, "provider: openai-compatible\nmodel: fresh-model\napi-key-env: ''\nbase-url: http://127.0.0.1:"
+        Files.writeString(config, "provider: openai-compatible\nmodel: fresh-model\nmodels:\n"
+                + "  - saved-model\n  - deepseek-v4-pro\n  - deepseek-flash\n"
+                + "discover-models: false\napi-key-env: ''\nbase-url: http://127.0.0.1:"
                 + server.getAddress().getPort() + "/v1\npermissions:\n  auto-review: false\n");
     }
 
     @AfterEach void stop() { if (server != null) server.stop(0); }
+
+    @Test void intentCommandsAreLocalAndEachTaskRecomputesTools() throws Exception {
+        Result result = run("/intent\n/intent invalid\n先给我修复方案\n继续\n可以，开始实现\n/intent chat\n你好\n/intent auto\n看下当前项目\n/exit\n");
+        assertEquals(0, result.code, result.err);
+        assertEquals(5, requests.size(), "查看和切换意图不增加模型请求");
+        for (int index : List.of(0, 1, 4)) {
+            assertFalse(requests.get(index).path("tools").toString().contains("write_file"));
+            assertTrue(requests.get(index).path("tools").toString().contains("read_file"));
+        }
+        assertTrue(requests.get(2).path("tools").toString().contains("write_file"));
+        assertEquals(0, requests.get(3).path("tools").size());
+        assertTrue(requests.get(0).path("messages").get(0).path("content").asText().contains("当前任务意图：plan"));
+        assertTrue(requests.get(2).path("messages").get(0).path("content").asText().contains("当前任务意图：edit"));
+    }
+
+    @Test void resumedPlanContinuationKeepsReadonlyTools() throws Exception {
+        save("intent-plan", "saved-model", "先给我修复方案");
+        Result result = run("/resume intent-plan\n继续\n/exit\n");
+        assertEquals(0, result.code, result.err);
+        assertEquals(1, requests.size());
+        assertFalse(requests.getFirst().path("tools").toString().contains("write_file"));
+        assertTrue(requests.getFirst().path("messages").get(0).path("content").asText().contains("当前任务意图：plan"));
+    }
+
 
     @Test void emptyListBadSelectionAndHelpRemainLocal() throws Exception {
         Result result = run("/resume\n/resume 1\n/resume 99999999999999999999\n/resume ../outside\n/help\n/exit\n");
@@ -188,6 +214,81 @@ class InteractiveResumeTest {
         assertEquals("override-model", store.load("saved").model());
     }
 
+    @Test void modelCommandOverridesRestoredCheckpointWithoutResettingConversationOrCallingModel() throws Exception {
+        save("saved", "saved-model", "原任务");
+        byte[] before = Files.readAllBytes(checkpoint("saved"));
+
+        Result result = run("/resume saved\n/model\n/exit\n");
+
+        assertEquals(0, result.code, result.err);
+        assertTrue(result.out.contains("── 选择模型 ──"), result.out);
+        assertTrue(result.out.contains("saved-model") && result.out.contains("deepseek-v4-pro"), result.out);
+        assertArrayEquals(before, Files.readAllBytes(checkpoint("saved")), "查询模型不能改写检查点");
+        assertTrue(requests.isEmpty());
+
+        Result switched = run(input("/resume saved\n/model deepseek-v4-pro\n/status\n/exit\n"));
+        assertEquals(0, switched.code, switched.err);
+        assertTrue(switched.out.contains("模型已切换为 deepseek-v4-pro"), switched.out);
+        assertTrue(requests.isEmpty(), "本地模型切换不能额外请求模型");
+        assertEquals("deepseek-v4-pro", store.load("saved").model());
+        assertEquals(List.of("原任务"), users(store.load("saved")), "切换模型不能改写历史");
+
+        Result continued = run("/resume saved\n继续\n/exit\n");
+        assertEquals(0, continued.code, continued.err);
+        assertEquals(1, requests.size());
+        assertEquals("deepseek-v4-pro", requests.getFirst().path("model").asText());
+        assertEquals(List.of("原任务", "继续"), users(store.load("saved")));
+    }
+
+    @Test void modelCommandMenuSelectsAnAvailableModelByNumber() throws Exception {
+        var lines = new PrefillInput("/model", "3", "继续", "/exit");
+        Result result = run(lines);
+        assertEquals(0, result.code, result.err);
+        assertTrue(result.out.contains("── 选择模型 ──"), result.out);
+        assertTrue(result.out.contains("deepseek-v4-pro"), result.out);
+        assertTrue(result.out.contains("模型已切换为 deepseek-v4-pro"), result.out);
+        assertEquals(1, requests.size());
+        assertEquals("deepseek-v4-pro", requests.getFirst().path("model").asText());
+    }
+
+    @Test void modelCommandRejectsControlCharactersWithoutChangingActiveModel() throws Exception {
+        save("saved", "saved-model", "原任务");
+        Result result = run(input("/resume saved\n/model bad\033[2Jmodel\n继续\n/exit\n"));
+        assertEquals(0, result.code, result.err);
+        assertTrue(result.out.contains("模型名无效"), result.out);
+        assertFalse(result.out.contains("\033"), result.out);
+        assertEquals(1, requests.size());
+        assertEquals("saved-model", requests.getFirst().path("model").asText());
+    }
+
+    @Test void modelCommandCanChangeTheRestoredModelAfterRewind() throws Exception {
+        store.save("saved", "openai-compatible", "saved-model", "COMPLETED", List.of(
+                ChatMessage.system("private-system"),
+                ChatMessage.user("较早任务"), ChatMessage.assistant("第一轮回复"),
+                ChatMessage.user("被回退的任务"), ChatMessage.assistant("第二轮回复")));
+
+        Result result = run("/resume saved\n/rewind 2\n/model deepseek-v4-pro\n继续\n/exit\n");
+
+        assertEquals(0, result.code, result.err);
+        assertTrue(result.out.contains("已回退到第 2 条提问"), result.out);
+        assertTrue(result.out.contains("模型已切换为 deepseek-v4-pro"), result.out);
+        assertEquals(1, requests.size());
+        assertEquals("deepseek-v4-pro", requests.getFirst().path("model").asText());
+        assertTrue(requests.getFirst().path("messages").toString().contains("较早任务"));
+        assertFalse(requests.getFirst().path("messages").toString().contains("被回退的任务"));
+        assertEquals(List.of("较早任务", "继续"), users(store.load("saved")));
+    }
+
+    @Test void modelCommandPersistsForANewInteractiveSessionAfterItsFirstTask() throws Exception {
+        Result result = run("/model fresh-alternate\n原任务\n/exit\n");
+        assertEquals(0, result.code, result.err);
+        assertTrue(result.out.contains("模型已切换为 fresh-alternate"), result.out);
+        assertEquals(1, requests.size());
+        assertEquals("fresh-alternate", requests.getFirst().path("model").asText());
+        String id = store.recent(1).getFirst().id();
+        assertEquals("fresh-alternate", store.load(id).model());
+    }
+
     @Test void interruptedToolIsNotReplayedOnResume() throws Exception {
         ToolCall pending = new ToolCall("pending-write", "write_file", "{\"path\":\"must-not-exist.txt\",\"content\":\"unexpected\"}");
         store.save("interrupted", "openai-compatible", "saved-model", "RUNNING",
@@ -208,6 +309,17 @@ class InteractiveResumeTest {
         assertEquals(List.of("valid"), store.recent(20).stream().map(SessionStore.Summary::id).toList());
         assertThrows(IllegalArgumentException.class, () -> store.recent(0));
         assertThrows(IllegalArgumentException.class, () -> store.recent(51));
+    }
+
+    @Test void 较新的损坏检查点不应遮住数量限制内的有效会话() throws Exception {
+        save("valid", "saved-model", "原任务");
+        Files.setLastModifiedTime(checkpoint("valid"), java.nio.file.attribute.FileTime.fromMillis(1000));
+        for (int index = 0; index < 25; index++) {
+            Path broken = checkpoint("broken-" + index);
+            Files.writeString(broken, "{}");
+            Files.setLastModifiedTime(broken, java.nio.file.attribute.FileTime.fromMillis(2000 + index));
+        }
+        assertEquals(List.of("valid"), store.recent(1).stream().map(SessionStore.Summary::id).toList());
     }
 
     @Test void resumedStreamErrorRetriesSameRequestOnceAndPreservesHistory() throws Exception {
@@ -253,7 +365,7 @@ class InteractiveResumeTest {
         store.save(id, "openai-compatible", model, "COMPLETED", List.of(ChatMessage.user(task)));
     }
 
-    @Test void rewindCreatesPersistentBranchWithoutChangingOriginalOrReplayingTools() throws Exception {
+    @Test void rewindKeepsSessionIdArchivesOldHistoryAndDoesNotReplayTools() throws Exception {
         ToolCall read = new ToolCall("read-old", "read_file", "{\"path\":\"old.txt\"}");
         store.save("original", "openai-compatible", "saved-model", "COMPLETED", List.of(
                 ChatMessage.system("旧系统"), ChatMessage.user("保留的提问"),
@@ -261,10 +373,14 @@ class InteractiveResumeTest {
                 ChatMessage.assistant("保留的回答"), ChatMessage.user("丢弃的提问"), ChatMessage.assistant("丢弃的回答")));
         byte[] original = Files.readAllBytes(checkpoint("original"));
         Files.writeString(workspace.resolve("changed.txt"), "文件修改不能被对话回退撤销");
-        Result result = run("/resume original\n/rewind\n2\n新的分支任务\n/exit\n");
+        var prefillInput = new PrefillInput("/resume original", "/rewind", "2", "新的分支任务", "/exit");
+        Result result = run(prefillInput);
         assertEquals(0, result.code, result.err);
         assertTrue(result.out.contains("已回退到第 2 条提问之前"));
-        assertArrayEquals(original, Files.readAllBytes(checkpoint("original")));
+        assertTrue(result.out.contains("所选提问已放入输入框"));
+        assertEquals("丢弃的提问", prefillInput.lastInitialBuffer);
+        assertEquals(JSON.readTree(original).get("transcript"),
+                JSON.valueToTree(store.load("original").rewinds().getLast().transcript()));
         assertEquals(1, requests.size());
         String wire = requests.getFirst().path("messages").toString();
         assertTrue(wire.contains("保留的回答"));
@@ -272,9 +388,9 @@ class InteractiveResumeTest {
         assertFalse(wire.contains("丢弃的"));
         assertTrue(wire.contains("新的分支任务"));
         assertEquals("文件修改不能被对话回退撤销", Files.readString(workspace.resolve("changed.txt")));
-        var branch = store.recent(20).stream().filter(s -> !s.id().equals("original")).findFirst().orElseThrow();
-        assertEquals(List.of("保留的提问", "新的分支任务"), users(store.load(branch.id())));
-        try (var lease = store.lock(branch.id())) { assertTrue(lease.lock().isValid()); }
+        assertEquals(List.of("original"), store.recent(20).stream().map(SessionStore.Summary::id).toList());
+        assertEquals(List.of("保留的提问", "新的分支任务"), users(store.load("original")));
+        try (var lease = store.lock("original")) { assertTrue(lease.lock().isValid()); }
     }
 
     @Test void rewindToStartSavesReadySessionAndCanResumeWithoutModel() throws Exception {
@@ -282,14 +398,20 @@ class InteractiveResumeTest {
         byte[] original = Files.readAllBytes(checkpoint("original"));
         Result result = run("/resume original\n/rewind 1\n/exit\n");
         assertEquals(0, result.code, result.err);
+        String rewindOutput = result.out.substring(result.out.indexOf("已回退到第 1 条提问之前"));
+        assertTrue(rewindOutput.contains("当前输入不支持行编辑"));
+        assertTrue(rewindOutput.contains("旧任务"));
+        assertFalse(rewindOutput.contains("所选提问已放入输入框"));
         assertTrue(requests.isEmpty());
-        assertArrayEquals(original, Files.readAllBytes(checkpoint("original")));
-        var branch = store.recent(20).stream().filter(s -> !s.id().equals("original")).findFirst().orElseThrow();
-        assertEquals("READY", branch.status());
-        assertTrue(users(store.load(branch.id())).isEmpty());
-        Result resumed = run("/resume " + branch.id() + "\n新开始\n/exit\n");
+        assertEquals(1, store.load("original").rewinds().size());
+        assertEquals(JSON.readTree(original).get("transcript"),
+                JSON.valueToTree(store.load("original").rewinds().getLast().transcript()));
+        assertEquals(List.of("original"), store.recent(20).stream().map(SessionStore.Summary::id).toList());
+        assertEquals("READY", store.load("original").status());
+        assertTrue(users(store.load("original")).isEmpty());
+        Result resumed = run("/resume original\n新开始\n/exit\n");
         assertEquals(0, resumed.code, resumed.err);
-        assertEquals(List.of("新开始"), users(store.load(branch.id())));
+        assertEquals(List.of("新开始"), users(store.load("original")));
         assertFalse(requests.getFirst().path("messages").toString().contains("旧任务"));
     }
 
@@ -317,6 +439,21 @@ class InteractiveResumeTest {
         return runMode(input, false, extra);
     }
     private Result runStreaming(TerminalInput input) { return runMode(input, true); }
+
+    private static final class PrefillInput implements TerminalInput {
+        private final java.util.Iterator<String> lines;
+        private String lastInitialBuffer;
+        PrefillInput(String... values) { lines = List.of(values).iterator(); }
+        @Override public boolean editsLine() { return true; }
+        @Override public String readLine() { return lines.hasNext() ? lines.next() : null; }
+        @Override public String readCommand(String prompt, java.util.function.Supplier<List<String>> candidates,
+                                            String initialBuffer) {
+            if (initialBuffer != null) lastInitialBuffer = initialBuffer;
+            return readLine();
+        }
+        @Override public boolean isTerminal() { return false; }
+    }
+
     private Result runMode(TerminalInput input, boolean stream, String... extra) {
         var cli = new CommandLine(new HarnessCli(input));
         StringWriter out = new StringWriter(), err = new StringWriter();

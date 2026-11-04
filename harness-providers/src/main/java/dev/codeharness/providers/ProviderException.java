@@ -6,7 +6,11 @@ public final class ProviderException extends RuntimeException {
     private final boolean streamFallbackSuggested;
 
     static ProviderException streamFailure(String message) {
-        return new ProviderException(message, 0, null, true);
+        return streamFailure(message, 0);
+    }
+
+    static ProviderException streamFailure(String message, int statusCode) {
+        return new ProviderException(message, statusCode, null, true);
     }
 
     /** 标识可尝试非流式的兼容错误；是否重试及次数由调用方策略决定。 */

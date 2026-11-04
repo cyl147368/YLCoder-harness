@@ -7,6 +7,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import picocli.CommandLine;
 
 import java.io.PrintWriter;
@@ -31,6 +33,8 @@ class StreamFallbackTest {
     private Path config;
     private final List<Reply> replies = new CopyOnWriteArrayList<>();
     private final List<JsonNode> requests = new CopyOnWriteArrayList<>();
+    private final List<Long> delays = new ArrayList<>();
+    private boolean cancelDuringWait;
 
     @BeforeEach void start() throws Exception {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -47,18 +51,21 @@ class StreamFallbackTest {
         });
         server.start();
         config = workspace.resolve("offline.yaml");
-        Files.writeString(config, "provider: openai-compatible\nmodel: fallback-fixture\napi-key-env: ''\nbase-url: http://127.0.0.1:"
+        Files.writeString(config, "provider: openai-compatible\nmodel: fallback-fixture\napi-key: private-upstream-payload\napi-key-env: ''\nbase-url: http://127.0.0.1:"
                 + server.getAddress().getPort() + "/v1\npermissions:\n  auto-review: false\n");
     }
 
     @AfterEach void stop() { server.stop(0); }
 
-    @Test void oneFallbackKeepsSameRequestAndCountsBothAttemptsWithoutPollutingJson() throws Exception {
-        replies.add(sse(ERROR));
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void oneFallbackKeepsSameRequestAndCountsBothAttemptsWithoutPollutingJson(boolean http400) throws Exception {
+        replies.add(recoverableFailure(http400));
         replies.add(answer());
-        Result result = run(new Input(), false, "--json", "--max-iterations", "1", "run", "检查项目");
+        Result result = run(new Input(), false, "--json", "run", "检查项目");
         assertEquals(0, result.code, result.err);
         assertEquals(2, requests.size());
+        assertEquals(List.of(1000L), delays);
         assertTrue(requests.getFirst().path("stream").asBoolean());
         assertFalse(requests.getLast().path("stream").asBoolean());
         assertSameRequest(0, 1);
@@ -72,17 +79,66 @@ class StreamFallbackTest {
         assertTrue(result.err.isBlank(), result.err);
     }
 
-    @Test void secondFailureStopsAndLeavesARecoverableCheckpoint() throws Exception {
-        replies.add(sse(ERROR));
-        replies.add(new Reply(503, "application/json", "{\"error\":\"private-upstream-payload\"}"));
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void threeFailuresStopAndLeaveARecoverableCheckpoint(boolean http400) throws Exception {
+        replies.add(recoverableFailure(http400));
+        for (int i = 0; i < 3; i++) replies.add(new Reply(http400 ? 400 : 503, "application/json",
+                "{\"error\":{\"message\":\"模型暂不可用 private-upstream-payload\",\"code\":\"upstream_unavailable\"}}"));
         Result result = run(new Input("检查项目", "/exit"), false);
         assertEquals(1, result.code);
-        assertEquals(2, requests.size());
-        assertTrue(result.err.contains("重试 1 次，仍未成功"), result.err);
+        assertEquals(4, requests.size());
+        assertEquals(List.of(1000L, 2000L, 4000L), delays);
+        assertTrue(result.err.contains("重试 3 次，仍未成功"), result.err);
+        assertTrue(result.err.contains("模型暂不可用"), result.err);
+        assertTrue(result.err.contains("code=upstream_unavailable"), result.err);
+        for (int i = 1; i <= 3; i++) assertSameRequest(0, i);
         assertFalse(result.err.contains("private-upstream-payload"));
         var saved = new SessionStore(workspace).recent(20);
         assertEquals(1, saved.size());
         assertEquals("FAILED", saved.getFirst().status());
+        try (var files = Files.walk(workspace.resolve(".harness"))) {
+            for (Path file : files.filter(Files::isRegularFile).toList()) {
+                assertFalse(Files.readString(file).contains("private-upstream-payload"));
+            }
+        }
+    }
+
+    @Test void 第三次重试成功并逐次记账() throws Exception {
+        replies.add(recoverableFailure(true));
+        replies.add(recoverableFailure(true));
+        replies.add(recoverableFailure(true));
+        replies.add(answer());
+        Result result = run(new Input(), false, "--json", "run", "检查项目");
+        assertEquals(0, result.code, result.err);
+        assertEquals(4, requests.size());
+        assertEquals(List.of(1000L, 2000L, 4000L), delays);
+        assertEquals(4, JSON.readTree(result.out).path("usageReport").path("requests").asInt());
+        assertTrue(result.err.isBlank());
+    }
+
+    @Test void 等待期间取消不再请求并保存检查点() throws Exception {
+        replies.add(recoverableFailure(true));
+        cancelDuringWait = true;
+        Result result = run(new Input("检查项目", "/exit"), false);
+        assertEquals(130, result.code, result.err);
+        assertEquals(1, requests.size());
+        assertEquals(List.of(1000L), delays);
+        assertEquals("CANCELLED", new SessionStore(workspace).recent(20).getFirst().status());
+        assertFalse(Thread.currentThread().isInterrupted());
+    }
+
+    @Test void json失败保留脱敏诊断且不输出进度() throws Exception {
+        for (int i = 0; i < 4; i++) replies.add(new Reply(400, "application/json",
+                "{\"error\":{\"message\":\"不支持参数 private-upstream-payload\",\"param\":\"max_tokens\"}}"));
+        Result result = run(new Input(), false, "--json", "run", "检查项目");
+        assertEquals(1, result.code);
+        JsonNode output = JSON.readTree(result.out);
+        assertTrue(output.path("error").asText().contains("param=max_tokens"), result.out);
+        assertTrue(output.path("error").asText().contains("不支持参数"));
+        assertFalse(result.out.contains("private-upstream-payload"));
+        assertEquals(4, output.path("usageReport").path("requests").asInt());
+        assertTrue(result.err.isBlank(), result.err);
     }
 
     @Test void partialTextIsNotAutomaticallyDuplicatedAndLaterTaskUsesSync() throws Exception {
@@ -98,9 +154,11 @@ class StreamFallbackTest {
         assertFalse(requests.getLast().path("messages").toString().contains("部分回复"));
     }
 
-    @Test void configurationCanDisableFallback() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void configurationCanDisableFallback(boolean http400) throws Exception {
         Files.writeString(config, Files.readString(config) + "agent:\n  stream-fallback: false\n");
-        replies.add(sse(ERROR));
+        replies.add(recoverableFailure(http400));
         Result result = run(new Input("检查项目", "/exit"), false);
         assertEquals(1, result.code);
         assertEquals(1, requests.size());
@@ -124,9 +182,11 @@ class StreamFallbackTest {
         assertTrue(requests.stream().allMatch(request -> request.path("stream").asBoolean()));
     }
 
-    @Test void partialToolFragmentsAreDiscardedAndEarlierCompletedToolsAreNotReplayed() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void partialToolFragmentsAreDiscardedAndEarlierCompletedToolsAreNotReplayed(boolean http400) throws Exception {
         replies.add(sse(event(tool("committed", "kept.txt"), "tool_calls") + "data: [DONE]\n\n"));
-        replies.add(sse(event(tool("uncommitted", "must-not-exist.txt"), null) + ERROR));
+        replies.add(http400 ? recoverableFailure(true) : sse(event(tool("uncommitted", "must-not-exist.txt"), null) + ERROR));
         replies.add(answer());
         Result result = run(new Input("修改一次", "/exit"), false);
         assertEquals(0, result.code, result.err);
@@ -141,8 +201,10 @@ class StreamFallbackTest {
         assertTrue(result.out.contains("3次主模型"), result.out);
     }
 
-    @Test void validFallbackToolExecutesOnceAndNextRoundRemainsNonStreaming() throws Exception {
-        replies.add(sse(ERROR));
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void validFallbackToolExecutesOnceAndNextRoundRemainsNonStreaming(boolean http400) throws Exception {
+        replies.add(recoverableFailure(http400));
         var message = new java.util.LinkedHashMap<String, Object>(tool("valid", "created.txt"));
         message.put("role", "assistant");
         replies.add(new Reply(200, "application/json", JSON.writeValueAsString(Map.of("choices",
@@ -156,13 +218,101 @@ class StreamFallbackTest {
         assertEquals(1, requests.getLast().path("messages").findValuesAsText("role").stream().filter("tool"::equals).count());
     }
 
-    @Test void ctrlCAtRetryNoticeCancelsBeforeAnotherRequest() throws Exception {
-        replies.add(sse(ERROR));
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void ctrlCAtRetryNoticeCancelsBeforeAnotherRequest(boolean http400) throws Exception {
+        replies.add(recoverableFailure(http400));
         Result result = run(new Input("检查项目", "/exit"), true);
         assertEquals(130, result.code, result.err);
         assertEquals(1, requests.size());
         assertEquals("CANCELLED", new SessionStore(workspace).recent(20).getFirst().status());
         assertFalse(Thread.currentThread().isInterrupted());
+    }
+
+    @Test void 非流式请求返回400时不重试() {
+        replies.add(recoverableFailure(true));
+        Result result = run(new Input("检查项目", "/exit"), false, "--no-stream");
+        assertEquals(1, result.code);
+        assertEquals(1, requests.size());
+        assertFalse(requests.getFirst().path("stream").asBoolean());
+        assertFalse(result.err.contains("正在自动改用"));
+        assertFalse(result.err.contains("private-upstream-payload"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {401, 403, 404, 413, 422})
+    void 其他请求错误不误触发400降级(int status) {
+        replies.add(new Reply(status, "application/json", "{\"error\":\"private-upstream-payload\"}"));
+        Result result = run(new Input("检查项目", "/exit"), false);
+        assertEquals(1, result.code);
+        assertEquals(1, requests.size());
+        assertFalse(result.err.contains("正在自动改用"));
+        assertFalse(result.err.contains("private-upstream-payload"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {408, 429, 500, 502, 503, 504})
+    void 临时HTTP失败按递增间隔重试并保留流式模式(int status) throws Exception {
+        replies.add(new Reply(status, "application/json", "{\"error\":\"temporary failure\"}"));
+        replies.add(new Reply(status, "application/json", "{\"error\":\"temporary failure\"}"));
+        replies.add(answer());
+        Result result = run(new Input(), false, "--json", "run", "检查项目");
+        assertEquals(0, result.code, result.err);
+        assertEquals(List.of(1000L, 2000L), delays);
+        assertEquals(3, requests.size());
+        assertTrue(requests.stream().allMatch(request -> request.path("stream").asBoolean()));
+        assertEquals(requests.getFirst(), requests.get(1), "临时失败重试应保留完整请求");
+        assertEquals(requests.getFirst(), requests.get(2));
+        assertEquals(3, JSON.readTree(result.out).path("usageReport").path("requests").asInt());
+    }
+
+    @Test void 暂时失败转流式兼容降级共享同一个三次重试预算() throws Exception {
+        replies.add(new Reply(503, "application/json", "{}"));
+        replies.add(recoverableFailure(true));
+        replies.add(new Reply(503, "application/json", "{}"));
+        replies.add(answer());
+        Result result = run(new Input(), false, "--json", "run", "检查项目");
+        assertEquals(0, result.code, result.err);
+        assertEquals(List.of(1000L, 2000L, 4000L), delays);
+        assertEquals(4, requests.size());
+        assertTrue(requests.get(1).path("stream").asBoolean());
+        assertFalse(requests.get(2).path("stream").asBoolean());
+        assertFalse(requests.get(3).path("stream").asBoolean());
+    }
+
+    @Test void 临时失败后的认证失败立即停止而不继续消耗重试预算() throws Exception {
+        replies.add(new Reply(503, "application/json", "{}"));
+        replies.add(new Reply(401, "application/json", "{\"error\":\"authentication failed\"}"));
+        Result result = run(new Input(), false, "--json", "run", "检查项目");
+        assertEquals(1, result.code);
+        assertEquals(2, requests.size());
+        assertEquals(List.of(1000L), delays);
+        assertTrue(JSON.readTree(result.out).path("error").asText().contains("401"));
+    }
+
+    @Test void 暂时性错误耗尽预算也不关闭后续任务的流式输出() throws Exception {
+        for (int index = 0; index < 4; index++) replies.add(new Reply(503, "application/json", "{}"));
+        replies.add(answer());
+        Result result = run(new Input("检查项目", "继续任务", "/exit"), false);
+        assertEquals(0, result.code, result.err);
+        assertEquals(5, requests.size());
+        assertEquals(List.of(1000L, 2000L, 4000L), delays);
+        assertTrue(requests.stream().allMatch(request -> request.path("stream").asBoolean()));
+        assertTrue(result.err.contains("模型请求已自动重试 3 次"), result.err);
+    }
+
+    @Test void 兼容降级期间遇到认证错误也立即停止() throws Exception {
+        replies.add(recoverableFailure(true));
+        replies.add(new Reply(401, "application/json", "{}"));
+        Result result = run(new Input(), false, "--json", "run", "检查项目");
+        assertEquals(1, result.code);
+        assertEquals(2, requests.size());
+        assertEquals(List.of(1000L), delays);
+        assertFalse(requests.getLast().path("stream").asBoolean());
+    }
+
+    private static Reply recoverableFailure(boolean http400) {
+        return http400 ? new Reply(400, "application/json", "{\"error\":\"private-upstream-payload\"}") : sse(ERROR);
     }
 
     private void assertSameRequest(int first, int second) {
@@ -190,7 +340,10 @@ class StreamFallbackTest {
     }
 
     private Result run(Input input, boolean cancelAtNotice, String... extra) {
-        var cli = new CommandLine(new HarnessCli(input));
+        var cli = new CommandLine(new HarnessCli(input, millis -> {
+            delays.add(millis);
+            if (cancelDuringWait) input.cancel.run();
+        }));
         var out = new StringWriter();
         var err = new StringWriter() {
             @Override public void write(String value, int offset, int length) {

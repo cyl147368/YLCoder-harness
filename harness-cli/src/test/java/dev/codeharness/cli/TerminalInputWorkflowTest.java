@@ -94,8 +94,12 @@ class TerminalInputWorkflowTest {
                 JsonNode review = fixture.reviews.getFirst();
                 assertEquals(2, review.path("messages").size());
                 assertTrue(review.path("tools").isMissingNode() || review.path("tools").isEmpty());
-                assertTrue(review.path("max_tokens").asInt() <= 96);
-                assertFalse(review.toString().contains(FIRST), "审核不接收主任务或聊天历史");
+                assertTrue(review.path("max_tokens").asInt() <= 192);
+                JsonNode reviewData = JSON.readTree(review.path("messages").get(1).path("content").asText());
+                assertEquals("date", reviewData.path("command").asText());
+                assertEquals(FIRST, reviewData.path("context").get(0).path("content").asText(),
+                        "审核应接收当前用户任务的受限投影");
+                assertFalse(reviewData.toString().contains(SECOND), "审核不能消费或提前接收下一个任务");
             }
         }
     }
@@ -104,13 +108,27 @@ class TerminalInputWorkflowTest {
         for (boolean fullAllow : List.of(false, true)) {
             FakeInput input = fullAllow ? new FakeInput(true, FIRST, SECOND, "/exit")
                     : new FakeInput(true, FIRST, "y", SECOND, "/exit");
-            try (Provider fixture = new Provider(true, true)) {
+            try (Provider fixture = new Provider(true, true, safeDirectoryCommand())) {
                 Outcome outcome = execute(input, fixture, fullAllow
                         ? new String[]{"--no-auto-review", "--allow-commands"} : new String[]{"--no-auto-review"});
                 assertEquals(0, outcome.code, outcome.err);
                 assertEquals(fullAllow ? 3 : 4, input.reads);
                 assertEquals(!fullAllow, outcome.err.contains("[y/N]"));
                 assertTrue(fixture.reviews.isEmpty());
+                assertWorkflow(fixture, true);
+            }
+        }
+    }
+
+    @Test void nativeQueryBypassesReviewWithoutConsumingTheNextTask() throws Exception {
+        for (boolean terminal : List.of(true, false)) {
+            FakeInput input = new FakeInput(terminal, FIRST, SECOND, "/exit");
+            try (Provider fixture = new Provider(true, false, "pwd")) {
+                Outcome outcome = execute(input, fixture);
+                assertEquals(0, outcome.code, outcome.err);
+                assertEquals(3, input.reads);
+                assertFalse(outcome.err.contains("[y/N]"));
+                assertTrue(fixture.reviews.isEmpty(), "原生工作区查询不得消耗审核请求");
                 assertWorkflow(fixture, true);
             }
         }
@@ -240,6 +258,10 @@ class TerminalInputWorkflowTest {
 
     private record Outcome(int code, String out, String err) {}
 
+    private static String safeDirectoryCommand() {
+        return System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("win") ? "dir /b" : "pwd";
+    }
+
     private static final class FakeInput implements TerminalInput {
         private final boolean terminal;
         private final List<String> lines;
@@ -271,6 +293,9 @@ class TerminalInputWorkflowTest {
         private volatile Runnable beforeResponse = () -> { };
         Provider() throws IOException { this(false, true); }
         Provider(boolean reviewMode, boolean approveReview) throws IOException {
+            this(reviewMode, approveReview, "date");
+        }
+        Provider(boolean reviewMode, boolean approveReview, String reviewCommand) throws IOException {
             server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
             server.createContext("/v1/chat/completions", exchange -> {
                 try {
@@ -293,8 +318,7 @@ class TerminalInputWorkflowTest {
                     Map<String, Object> message;
                     if (number == 1) {
                         // 追加写入使意外重复执行表现为多行内容。
-                        String safe = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("win") ? "dir /b" : "pwd";
-                        String arguments = JSON.writeValueAsString(Map.of("command", reviewMode ? safe : "echo terminal-approved>> approved.txt"));
+                        String arguments = JSON.writeValueAsString(Map.of("command", reviewMode ? reviewCommand : "echo terminal-approved>> approved.txt"));
                         message = Map.of("role", "assistant", "content", "", "tool_calls", List.of(Map.of(
                                 "id", "terminal-command", "type", "function", "function",
                                 Map.of("name", "run_command", "arguments", arguments))));

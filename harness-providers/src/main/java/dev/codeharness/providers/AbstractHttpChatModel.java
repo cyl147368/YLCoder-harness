@@ -19,9 +19,11 @@ abstract class AbstractHttpChatModel implements ChatModel {
     protected static final ObjectMapper JSON = new ObjectMapper();
     protected final ProviderConfig config;
     protected final HttpClient client;
+    protected final ProviderErrors errors;
 
     AbstractHttpChatModel(ProviderConfig config) {
         this.config = config;
+        this.errors = new ProviderErrors(config);
         this.client = HttpClient.newBuilder()
                 .connectTimeout(config.timeout())
                 .followRedirects(HttpClient.Redirect.NEVER)
@@ -45,11 +47,13 @@ abstract class AbstractHttpChatModel implements ChatModel {
             config.headers().forEach(builder::setHeader);
             HttpResponse<String> response = client.send(builder.build(), HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                throw new ProviderException(config.providerId() + " 请求失败，HTTP 状态码 " + response.statusCode(), response.statusCode());
+                throw new ProviderException(config.providerId() + " 请求失败，HTTP 状态码 " + response.statusCode()
+                        + errors.detail(response.body()), response.statusCode());
             }
             JsonNode payload = JSON.readTree(response.body());
             if (payload == null || !payload.isObject() || payload.hasNonNull("error")) {
-                throw new ProviderException(config.providerId() + " 返回了无效的响应结构");
+                throw new ProviderException(config.providerId() + " 返回了无效的响应结构"
+                        + (payload != null && payload.hasNonNull("error") ? errors.detail(payload) : ""));
             }
             return decode(payload);
         } catch (ProviderException e) {
@@ -58,8 +62,7 @@ abstract class AbstractHttpChatModel implements ChatModel {
             Thread.currentThread().interrupt();
             throw new ProviderException(config.providerId() + " 请求已中断");
         } catch (IOException | RuntimeException e) {
-            // 解析器、HTTP 消息及异常原因都可能包含请求 URL 或载荷，不能直接暴露。
-            throw new ProviderException(config.providerId() + " 请求失败（" + e.getClass().getSimpleName() + "）");
+            throw TransportErrors.request(config.providerId(), e);
         }
     }
 

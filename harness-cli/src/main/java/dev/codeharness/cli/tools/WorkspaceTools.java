@@ -381,7 +381,7 @@ public final class WorkspaceTools {
     }
 
     private final class RunCommand implements Tool {
-        public ToolDefinition definition() { return WorkspaceTools.this.definition("run_command", "在工作区中执行命令。目录/时间只读查询及安全 Git 检查可由 AI 审核子 agent 审核后直接执行；未知或有副作用的命令仍需确认。设有超时和输出限制，不是操作系统沙箱。", Map.of("command", stringProp("要执行的命令行")), "command"); }
+        public ToolDefinition definition() { return WorkspaceTools.this.definition("run_command", "在工作区中执行命令。支持的查询走只读通道；普通 Maven 构建／测试经审核 AI 判断，批准后直接执行绑定的 Java/Maven 参数。其他命令仍可能需要确认。设有超时和输出限制，不是操作系统沙箱。", Map.of("command", stringProp("要执行的命令行")), "command"); }
         public String execute(String input) throws Exception {
             String command = required(args(input), "command").trim();
             if (command.isEmpty()) throw new IllegalArgumentException("command 不能为空");
@@ -390,14 +390,24 @@ public final class WorkspaceTools {
             if (decision == null || !decision.approved()) {
                 throw new SecurityException("命令未获批准");
             }
+            if (decision.nativeQuery() != null) {
+                NativeReadOnlyQuery.Plan plan = decision.nativeQuery();
+                if (!root.equals(plan.workspace()) || !command.equals(plan.command()))
+                    throw new SecurityException("原生查询计划与当前工作区或命令不一致");
+                return "退出码：0\n" + NativeReadOnlyQuery.execute(plan);
+            }
+            var build = decision.mavenBuild();
+            if (build != null && (!root.equals(build.workspace()) || !command.equals(build.command())))
+                throw new SecurityException("Maven 构建计划与当前工作区或命令不一致");
+            List<String> directArguments = build == null ? decision.arguments() : build.arguments();
             boolean windows = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
             // /s 会移除最外层引号。显式提供一层包裹，使带引号的可执行文件
             // 和最后一个参数的路径在 shell 命令中保留各自的引号。
-            ProcessBuilder builder = !decision.arguments().isEmpty() ? new ProcessBuilder(decision.arguments()) : windows
+            ProcessBuilder builder = !directArguments.isEmpty() ? new ProcessBuilder(directArguments) : windows
                     ? new ProcessBuilder("cmd.exe", "/d", "/s", "/c", "\"" + command + "\"")
                     : new ProcessBuilder("/bin/sh", "-c", command);
             builder.directory(root.toFile());
-            if (!decision.arguments().isEmpty()) {
+            if (!directArguments.isEmpty()) {
                 // 受限执行计划不继承可改写 Git 位置/配置或自动加载 Java 代码的环境入口。
                 builder.environment().keySet().removeIf(name -> name.toUpperCase(Locale.ROOT).startsWith("GIT_")
                         || Set.of("JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS", "CLASSPATH",
@@ -408,8 +418,11 @@ public final class WorkspaceTools {
                 builder.environment().put("GIT_CONFIG_SYSTEM", windows ? "NUL" : "/dev/null");
                 builder.environment().put("GIT_NO_LAZY_FETCH", "1");
             }
+            if (build != null) build.configureEnvironment(builder.environment());
             builder.redirectErrorStream(true);
             if (Thread.currentThread().isInterrupted()) throw new InterruptedException("命令在启动前被中断");
+            if (build != null) build.revalidate();
+            if (Thread.currentThread().isInterrupted()) throw new InterruptedException("命令在复核后被中断，尚未启动");
             Process process = builder.start();
             BoundedOutput output = new BoundedOutput();
             Thread drain = Thread.ofVirtual().name("harness-command-output").unstarted(() -> {

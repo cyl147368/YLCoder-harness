@@ -17,6 +17,26 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 
 class CodeAgentTest {
+    @Test void filteredToolsAreNeitherAdvertisedNorExecutable() {
+        AtomicInteger calls = new AtomicInteger();
+        AtomicInteger executions = new AtomicInteger();
+        Tool write = new Tool() {
+            public ToolDefinition definition() { return new ToolDefinition("write_file", "写入", Map.of("type", "object")); }
+            public String execute(String args) { executions.incrementAndGet(); return "不应执行"; }
+        };
+        ChatModel model = request -> {
+            assertTrue(request.tools().isEmpty());
+            if (calls.getAndIncrement() == 0) return new ChatResponse("", List.of(new ToolCall("c1", "write_file", "{}")), TokenUsage.ZERO, FinishReason.TOOL_CALLS);
+            assertTrue(request.messages().getLast().content().contains("工具不可用"));
+            return ChatResponse.text("只读完成");
+        };
+        var agent = new CodeAgent(model, new ToolRegistry(List.of(write)));
+        var result = agent.withTools(tool -> false).run("只读", AgentRunOptions.defaults());
+        assertEquals(AgentResult.Status.COMPLETED, result.status());
+        assertEquals(0, executions.get());
+        assertEquals(2, calls.get());
+    }
+
     @Test void synchronousModelDoesNotInventStreamingDeltas() {
         AtomicInteger deltas = new AtomicInteger();
         ChatModel model = request -> ChatResponse.text("Done");
@@ -87,16 +107,58 @@ class CodeAgentTest {
     }
 
     @Test
-    void stopsAtIterationLimitWhenModelKeepsRequestingTools() {
-        ChatModel model = request -> new ChatResponse("", List.of(new ToolCall("call", "noop", "{}")), TokenUsage.ZERO, FinishReason.TOOL_CALLS);
+    void continuesPastLegacyIterationLimitUntilModelCompletes() {
+        AtomicInteger turns = new AtomicInteger();
+        ChatModel model = request -> turns.incrementAndGet() <= 3
+                ? new ChatResponse("", List.of(new ToolCall("call-" + turns.get(), "noop", "{}")), TokenUsage.ZERO, FinishReason.TOOL_CALLS)
+                : ChatResponse.text("Done");
         Tool noop = new Tool() {
             @Override public ToolDefinition definition() { return new ToolDefinition("noop", "No operation", Map.of("type", "object")); }
             @Override public String execute(String args) { return "ok"; }
         };
         AgentRunOptions options = new AgentRunOptions(null, 1, 1000, 100, 1000, () -> false);
         AgentResult result = new CodeAgent(model, new ToolRegistry(List.of(noop))).run("Do task", options);
-        assertEquals(AgentResult.Status.MAX_ITERATIONS, result.status());
-        assertEquals(1, result.iterations());
-        assertEquals(1, result.transcript().stream().filter(m -> m.role() == ChatMessage.Role.ASSISTANT && !m.toolCalls().isEmpty()).count());
+        assertEquals(AgentResult.Status.COMPLETED, result.status());
+        assertEquals("Done", result.finalAnswer());
+        assertEquals(4, result.iterations());
+        assertEquals(3, result.transcript().stream().filter(m -> m.role() == ChatMessage.Role.ASSISTANT && !m.toolCalls().isEmpty()).count());
+    }
+
+    @Test
+    void compactsOnlyModelRequestAndKeepsFullConversationForCheckpointsAndResume() {
+        List<ChatMessage> history = new java.util.ArrayList<>();
+        history.add(ChatMessage.system("system"));
+        history.add(ChatMessage.user("original task"));
+        for (int i = 0; i < 8; i++) {
+            history.add(ChatMessage.assistant("older answer " + i + " ".repeat(20)));
+            history.add(ChatMessage.user("older follow-up " + i));
+        }
+        history.add(ChatMessage.user("current question"));
+        List<ChatMessage> originalHistory = List.copyOf(history);
+        AtomicInteger checkpoints = new AtomicInteger();
+        AtomicInteger turns = new AtomicInteger();
+        ChatModel model = request -> {
+            if (turns.getAndIncrement() == 0) {
+                assertTrue(request.messages().stream().noneMatch(m -> m.content().equals("older follow-up 0")));
+                assertTrue(request.messages().stream().anyMatch(m -> m.content().equals("current question")));
+                return ChatResponse.text("completed");
+            }
+            return ChatResponse.text("unexpected extra request");
+        };
+        AgentListener listener = new AgentListener() {
+            @Override public void onCheckpoint(List<ChatMessage> checkpoint) {
+                assertEquals(originalHistory, checkpoint.subList(0, originalHistory.size()));
+                checkpoints.incrementAndGet();
+            }
+        };
+
+        AgentResult result = new CodeAgent(model, ToolRegistry.empty())
+                .resume(history, new AgentRunOptions("", 10, 120, 100, 1000, () -> false), listener);
+
+        assertEquals(AgentResult.Status.COMPLETED, result.status());
+        assertEquals(1, turns.get());
+        assertTrue(checkpoints.get() >= 2);
+        assertEquals(originalHistory, result.transcript().subList(0, originalHistory.size()));
+        assertTrue(result.transcript().stream().anyMatch(m -> m.content().equals("older follow-up 0")));
     }
 }

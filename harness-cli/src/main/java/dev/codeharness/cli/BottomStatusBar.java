@@ -21,6 +21,8 @@ final class BottomStatusBar implements AutoCloseable {
     private Screen lastScreen;
     private int footerRows;
     private boolean painted;
+    private List<String> lastLines = List.of();
+    private boolean lastColor;
 
     static BottomStatusBar open(PrintWriter writer, boolean allowed) {
         if (!allowed || !System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("windows"))
@@ -86,6 +88,8 @@ final class BottomStatusBar implements AutoCloseable {
                     // 每次检查实际光标，先为刚输出的正文腾出空间，不能直接覆盖底部几行。
                     || screen.cursorRow() > screen.height() - rows;
             if (changed) establish(screen, rows);
+            // 内容、位置均不变时跳过整个 ANSI 帧；清理正文、调整尺寸及滚动后仍必须重画。
+            if (!changed && painted && lines.equals(lastLines) && color == lastColor) return;
             writer.print("\0337");
             int start = screen.height() - footerRows + 1;
             for (int index = 0; index < footerRows; index++) {
@@ -103,6 +107,8 @@ final class BottomStatusBar implements AutoCloseable {
             else {
                 painted = true;
                 lastScreen = surface.screen();
+                lastLines = List.copyOf(lines);
+                lastColor = color;
             }
         } catch (Throwable unavailable) {
             disable();

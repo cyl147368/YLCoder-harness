@@ -7,11 +7,14 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 class OpenAiChatStreamTest {
+    private static OpenAiChatStream protectedParser() {
+        return new OpenAiChatStream(null, new ProviderErrors(ProviderConfig.of("openai", "mock", "secret")));
+    }
     @Test void explicitRequestErrorsDoNotSuggestAnImmediateFallback() {
         for (String code : List.of("invalid_api_key", "insufficient_quota", "rate_limit_exceeded", "invalid_request_error", "401", "403", "429")) {
             for (String field : List.of("type", "code", "status", "status_code")) {
                 String event = "{\"error\":{\"" + field + "\":\"" + code + "\",\"message\":\"secret\"}}";
-                var failure = assertThrows(ProviderException.class, () -> new OpenAiChatStream(null).onEvent(event));
+                var failure = assertThrows(ProviderException.class, () -> protectedParser().onEvent(event));
                 assertFalse(failure.streamFallbackSuggested(), code);
                 assertFalse(failure.getMessage().contains("secret"));
             }
@@ -19,14 +22,14 @@ class OpenAiChatStreamTest {
     }
     @Test void upstreamErrorAndWrongProtocolAreDistinctFromMalformedChunksAndNeverLeakPayload() {
         for (String event : List.of("{\"error\":{\"message\":\"secret\"}}", "{\"type\":\"response.created\",\"response\":{\"private\":\"secret\"}}")) {
-            var parser = new OpenAiChatStream(null);
+            var parser = protectedParser();
             var failure = assertThrows(ProviderException.class, () -> parser.onEvent(event));
             assertTrue(failure.streamFallbackSuggested());
             assertFalse(failure.getMessage().contains("secret"));
             assertFalse(failure.getMessage().contains("分块结构无效"));
             assertThrows(ProviderException.class, parser::response);
         }
-        assertFalse(assertThrows(ProviderException.class, () -> new OpenAiChatStream(null).onEvent("{}")).streamFallbackSuggested());
+        assertFalse(assertThrows(ProviderException.class, () -> protectedParser().onEvent("{}")).streamFallbackSuggested());
     }
     @Test void emitsVisibleTextAndReassemblesParallelArgumentsOnlyAfterDone() {
         var deltas = new ArrayList<String>();
@@ -57,7 +60,7 @@ class OpenAiChatStreamTest {
 
     @Test void failedCompletionNeverExposesPartialCalls() {
         for (String reason : List.of("length", "content_filter")) {
-            var parser = new OpenAiChatStream(null);
+            var parser = protectedParser();
             parser.onEvent(chunk("{\"tool_calls\":[{\"index\":0,\"type\":\"function\",\"id\":\"call_a\",\"function\":{\"name\":\"write_file\",\"arguments\":\"{\"}}]}", reason));
             parser.onEvent("[DONE]");
             assertTrue(parser.response().toolCalls().isEmpty());
@@ -72,17 +75,17 @@ class OpenAiChatStreamTest {
                 chunk("{\"tool_calls\":[{\"index\":0},{\"index\":0}]}", null),
                 chunk("{\"tool_calls\":[{\"index\":0,\"type\":\"computer\"}]}", null),
                 chunk("{}", "secret"), "{\"choices\":[],\"usage\":{\"prompt_tokens\":-1}}", "{\"choices\":[]} {}")) {
-            var failure = assertThrows(ProviderException.class, () -> new OpenAiChatStream(null).onEvent(event));
+            var failure = assertThrows(ProviderException.class, () -> protectedParser().onEvent(event));
             assertFalse(failure.getMessage().contains("secret"));
             assertNull(failure.getCause());
         }
     }
 
     @Test void rejectsMissingCompletionAndStrictlyValidatesFinalCalls() {
-        var unfinished = new OpenAiChatStream(null);
+        var unfinished = protectedParser();
         assertThrows(ProviderException.class, () -> unfinished.onEvent("[DONE]"));
         for (String args : List.of("[]", "{\"x\":1,\"x\":2}", "{} {}")) {
-            var parser = new OpenAiChatStream(null);
+            var parser = protectedParser();
             var delta = AbstractHttpChatModel.JSON.createObjectNode();
             delta.putArray("tool_calls").addObject().put("index", 0).put("type", "function").put("id", "call_a")
                     .putObject("function").put("name", "read").put("arguments", args);
@@ -97,7 +100,7 @@ class OpenAiChatStreamTest {
         parser.onEvent(chunk("{\"content\":\"done\"}", "stop"));
         parser.onEvent("[DONE]");
         assertEquals("done", parser.response().text());
-        var oversized = new OpenAiChatStream(null);
+        var oversized = protectedParser();
         assertThrows(ProviderException.class, () -> oversized.onEvent(chunk("{\"content\":\"" + "x".repeat(1_048_577) + "\"}", null)));
     }
 

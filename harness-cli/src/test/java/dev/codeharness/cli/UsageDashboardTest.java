@@ -113,7 +113,9 @@ class UsageDashboardTest {
             return response(100, 10, 80, true);
         }, Duration.ofMillis(50), 1, text -> {}, dashboard::record);
         try {
-            assertFalse(reviewer.review(new CommandApproval.Request(workspace.toRealPath(), "pwd")).approved());
+            var outcome = reviewer.review(new CommandApproval.Request(workspace.toRealPath(), "date"));
+            assertFalse(outcome.approved());
+            assertEquals(CommandReview.Status.TIMEOUT, outcome.status());
             assertEquals(1, dashboard.task().requests());
             assertEquals(0, dashboard.task().inputReportedRequests());
             dashboard.beginTask();
@@ -129,10 +131,24 @@ class UsageDashboardTest {
         var dashboard = new UsageDashboard();
         var reviewer = new CommandReview(request -> response(0, 0, 0, true), Duration.ofSeconds(1), 1,
                 text -> {}, dashboard::record);
-        assertTrue(reviewer.review(new CommandApproval.Request(workspace.toRealPath(), "pwd")).approved());
+        assertTrue(reviewer.review(new CommandApproval.Request(workspace.toRealPath(), "date")).approved());
         assertEquals(0, reviewer.stats().unreportedRequests());
         assertEquals(1, dashboard.task().inputReportedRequests());
         assertEquals(1, dashboard.task().requests());
+    }
+
+    @Test void nativeLocalApprovalAddsNoModelUsage() throws Exception {
+        var dashboard = new UsageDashboard();
+        var reviewer = new CommandReview(request -> { throw new AssertionError("原生查询不应请求模型"); },
+                Duration.ofSeconds(1), 1, text -> {}, dashboard::record);
+        var outcome = reviewer.review(new CommandApproval.Request(workspace.toRealPath(), "pwd"));
+        assertTrue(outcome.approved());
+        assertEquals(CommandReview.Status.LOCAL_APPROVED, outcome.status());
+        assertEquals(1, reviewer.stats().localApprovals());
+        assertEquals(0, reviewer.stats().requests());
+        assertEquals(0, dashboard.task().requests());
+        assertEquals(0, dashboard.process().requests());
+        assertEquals(TokenUsage.ZERO, dashboard.task().total());
     }
 
     private static ChatResponse response(long input, long output, long cached, boolean cacheReported) {
