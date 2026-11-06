@@ -35,13 +35,14 @@ public final class OpenAiCompatibleProvider implements ModelProvider {
                 if ("openai".equals(config.providerId()) || "azure-openai".equals(config.providerId())) {
                     body.putObject("stream_options").put("include_usage", true);
                 }
+                String encodedBody = JSON.writeValueAsString(body);
                 var builder = java.net.http.HttpRequest.newBuilder(endpoint()).timeout(config.timeout())
                         .setHeader("Content-Type", "application/json").setHeader("Accept", "text/event-stream, application/json")
-                        .POST(java.net.http.HttpRequest.BodyPublishers.ofString(JSON.writeValueAsString(body)));
+                        .POST(java.net.http.HttpRequest.BodyPublishers.ofString(encodedBody));
                 protocolHeaders().forEach(builder::setHeader);
                 config.headers().forEach(builder::setHeader);
                 var stream = new OpenAiChatStream(onTextDelta, errors);
-                String fallback = NativeStreamTransport.exchange(client, builder.build(), config.timeout(), stream::onEvent, errors);
+                String fallback = NativeStreamTransport.exchange(client, builder.build(), config.timeout(), stream::onEvent, errors, encodedBody);
                 if (fallback == null) return stream.response();
                 JsonNode payload = OpenAiChatStream.parse(fallback);
                 if (!payload.isObject() || payload.hasNonNull("error")) throw new ProviderException("Chat 流返回了无效的响应结构"

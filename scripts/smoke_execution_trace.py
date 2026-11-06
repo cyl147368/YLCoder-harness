@@ -13,6 +13,7 @@ import tempfile
 import threading
 import time
 import zipfile
+from read_model_trace import read_wire_events
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_JAR = ROOT / 'harness-cli/target/harness-cli-0.1.0-SNAPSHOT-all.jar'
@@ -93,6 +94,7 @@ class Fixture:
     def __init__(self, api_format, scenario):
         self.api_format, self.scenario = api_format, scenario
         self.requests, self.paths, self.times, self.failures = [], [], [], []
+        self.responses = []
         self.main_calls = 0
         self.lock = threading.Lock()
 
@@ -104,6 +106,7 @@ class Fixture:
                 pass
 
             def send(self, status, media_type, text):
+                fixture.responses.append({'status': status, 'body': text})
                 body = text.encode('utf-8')
                 self.send_response(status)
                 self.send_header('Content-Type', media_type)
@@ -180,7 +183,7 @@ def trace_contents(workspace, report):
     assert '# YLCoder 执行日志' in text and '## 任务结束' in text
     for secret in (KEY, REVIEW_KEY, HEADER_VALUE):
         assert secret not in text, '模拟连接凭据进入日志'
-    for anchor in re.findall(r'\]\(#(content-\d+)\)', text):
+    for anchor in re.findall(r'\]\(#((?:content|wire)-\d+)\)', text):
         assert '<a id="' + anchor + '"></a>' in text, '日志内容引用没有对应的首次记录'
     return file, text
 
@@ -239,11 +242,27 @@ def verify_case(java, jar, launcher, base, api_format, scenario):
                 expected = {'tools': 2, 'review': 3, 'retry': 4, 'partial': 1}[scenario]
                 assert len(fixture.requests) == expected, '记录功能额外请求了模型'
                 assert text.count('## 模型请求 #') == expected
+                wire = read_wire_events(text)
+                sent = [event['body'] for event in wire if event['kind'] == 'request']
+                received = [event['body'] for event in wire if event['kind'] == 'response']
+                assert sent == fixture.requests, '还原后的日志请求与服务端收到的报文不一致'
+                expected_responses = []
+                for response in fixture.responses:
+                    body = response['body']
+                    for secret in (KEY, REVIEW_KEY, HEADER_VALUE):
+                        body = body.replace(secret, '[已脱敏]')
+                    try:
+                        body = json.loads(body)
+                    except ValueError:
+                        pass
+                    expected_responses.append(body)
+                assert received == expected_responses, '还原后的响应与服务端发送内容不一致'
+                assert not any(event['truncated'] for event in wire)
                 if scenario == 'tools':
                     assert '工具开始' in text and '工具完成' in text and 'trace-read' in text
-                    assert PREFIX in text and TAIL not in text and '已截断' in text
+                    assert PREFIX in text and TAIL in text and '已截断' in text
                     assert TAIL in json.dumps(fixture.requests[-1], ensure_ascii=False)
-                    assert text.count(TASK) == 1 and '首次记录' in text
+                    assert text.count(TASK) == 1 and 'new_content' in text
                     assert '输入 17' in text and '缓存输入 9' in text
                     resume, elapsed = invoke(java, jar, launcher, workspace, home, arguments + ['--no-stream', '--json', 'resume', report['session'], FOLLOWUP])
                     processes.append(elapsed)
@@ -251,6 +270,9 @@ def verify_case(java, jar, launcher, base, api_format, scenario):
                     resumed = json.loads(resume.stdout)
                     assert resumed['session'] == report['session'] and len(fixture.requests) == 3
                     next_file, next_text = trace_contents(workspace, resumed)
+                    resumed_wire = read_wire_events(next_text)
+                    assert [event['body'] for event in resumed_wire if event['kind'] == 'request'] == fixture.requests[2:]
+                    assert [event['body'] for event in resumed_wire if event['kind'] == 'response'] == [json.loads(item['body']) for item in fixture.responses[2:]]
                     assert next_file.parent == file.parent and next_file != file
                     assert FOLLOWUP in next_text and TASK in next_text
                     files.append({'sha256': digest(next_file.read_bytes()), 'bytes': next_file.stat().st_size})
@@ -268,7 +290,7 @@ def verify_case(java, jar, launcher, base, api_format, scenario):
                     assert len(fixture.requests) == 3
                 elif scenario == 'review':
                     assert text.count('- 来源：agent') == 2 and text.count('- 来源：reviewer') == 1
-                    assert 'trace-review-model' in text and '审核结构化结果' in text and '审核过程记录标记' in text
+                    assert 'trace-review-model' in text and 'HTTP 响应报文' in text and '审核过程记录标记' in text
                     assert '工具完成' in text and report['review']['requests'] == 1 and report['review']['approved'] == 1
                 elif scenario == 'retry':
                     assert text.count('## 模型请求失败 #') == 3 and text.count(TASK) == 1
@@ -276,12 +298,13 @@ def verify_case(java, jar, launcher, base, api_format, scenario):
                     intervals = [fixture.times[index + 1] - fixture.times[index] for index in range(3)]
                     assert all(delay >= minimum for delay, minimum in zip(intervals, (0.9, 1.9, 3.9))), intervals
                 else:
-                    assert PARTIAL in text and '未完成回复片段' in text and '模型请求失败' in text
+                    assert PARTIAL in text and '响应读取未完成' in text and '模型请求失败' in text
                     assert '## 模型回复 #' not in text
             assert report['traceFile'] is None or Path(report['traceFile']).parent.name == report['session']
         assert not fixture.failures, fixture.failures
         request_hashes = [digest(json.dumps(request, ensure_ascii=False, sort_keys=True).encode('utf-8')) for request in fixture.requests]
         return {'apiFormat': api_format, 'scenario': scenario, 'passed': True, 'modelRequests': len(fixture.requests),
+                'wireRoundTripVerified': scenario in ('tools', 'review', 'retry', 'partial'),
                 'paths': fixture.paths, 'requestSha256': request_hashes, 'processElapsedMs': processes, 'traceFiles': files,
                 'retryIntervalsSeconds': [round(fixture.times[i + 1] - fixture.times[i], 3) for i in range(3)] if scenario == 'retry' else []}
     finally:
@@ -308,7 +331,8 @@ def main():
     assert jar.is_file(), '先构建带依赖运行包'
     required = ['dev/codeharness/cli/TraceRecorder.class', 'dev/codeharness/cli/TraceFiles.class',
                 'dev/codeharness/cli/trace/ExecutionTrace.class', 'dev/codeharness/cli/trace/TraceFile.class',
-                'dev/codeharness/cli/trace/TraceRedactor.class', 'dev/codeharness/cli/tools/UnifiedDiff.class']
+                'dev/codeharness/cli/trace/TraceRedactor.class', 'dev/codeharness/cli/trace/WirePayloads.class',
+                'dev/codeharness/providers/HttpExchangeTrace.class', 'dev/codeharness/cli/tools/UnifiedDiff.class']
     with zipfile.ZipFile(jar) as archive:
         assert all(name in archive.namelist() for name in required), '运行包缺少必要类'
     cases = [('chat', 'tools'), ('responses', 'tools'), ('chat', 'review'), ('chat', 'retry'),

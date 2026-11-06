@@ -37,15 +37,21 @@ abstract class AbstractHttpChatModel implements ChatModel {
 
     @Override
     public final ChatResponse complete(ChatRequest request) {
+        HttpExchangeTrace.Exchange trace = null;
         try {
+            String body = JSON.writeValueAsString(encode(request));
             HttpRequest.Builder builder = HttpRequest.newBuilder(endpoint())
                     .timeout(config.timeout())
                     .header("Content-Type", "application/json")
                     .header("Accept", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(JSON.writeValueAsString(encode(request))));
+                    .POST(HttpRequest.BodyPublishers.ofString(body));
             protocolHeaders().forEach(builder::setHeader);
             config.headers().forEach(builder::setHeader);
+            trace = HttpExchangeTrace.start("POST", endpoint(), body);
             HttpResponse<String> response = client.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+            trace.headers(response.statusCode(), response.headers().firstValue("content-type").orElse(null));
+            trace.accept(response.body());
+            trace.finish("HTTP 正文读取结束");
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 throw new ProviderException(config.providerId() + " 请求失败，HTTP 状态码 " + response.statusCode()
                         + errors.detail(response.body()), response.statusCode());
@@ -63,6 +69,8 @@ abstract class AbstractHttpChatModel implements ChatModel {
             throw new ProviderException(config.providerId() + " 请求已中断");
         } catch (IOException | RuntimeException e) {
             throw TransportErrors.request(config.providerId(), e);
+        } finally {
+            if (trace != null) trace.finish("响应读取未完成");
         }
     }
 

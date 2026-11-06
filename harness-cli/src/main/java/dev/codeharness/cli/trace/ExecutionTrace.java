@@ -37,6 +37,7 @@ public final class ExecutionTrace implements AutoCloseable {
     private final Consumer<String> warning;
     private final TraceRedactor redactor;
     private final Map<String, String> references = new HashMap<>();
+    private final WirePayloads wirePayloads = new WirePayloads();
     private final Map<Long, String> requestSources = new HashMap<>();
     private final int fileLimit;
     private TraceFile output;
@@ -85,6 +86,11 @@ public final class ExecutionTrace implements AutoCloseable {
     /** 每次真实调用使用独立编号，包括重试、降级及审核请求。 */
     public synchronized long request(String source, String provider, String model, boolean streaming,
                                      int iteration, ChatRequest request) {
+        return request(source, provider, model, streaming, iteration, request, true);
+    }
+
+    public synchronized long request(String source, String provider, String model, boolean streaming,
+                                     int iteration, ChatRequest request, boolean includeLogicalBody) {
         long id = ++requests;
         if (disabled || closed) return id;
         try {
@@ -102,6 +108,14 @@ public final class ExecutionTrace implements AutoCloseable {
             field(event, "智能体迭代", Integer.toString(iteration));
             field(event, "maxOutputTokens", request.maxOutputTokens() == null ? "厂商默认" : request.maxOutputTokens().toString());
             field(event, "消息数量", Integer.toString(request.messages().size()));
+            if (includeLogicalBody) logicalBody(event, request);
+            append(event.toString());
+        } catch (LimitReached limit) { stop(true); }
+        catch (Exception failure) { stop(false); }
+        return id;
+    }
+
+    private void logicalBody(StringBuilder event, ChatRequest request) throws Exception {
             int index = 0;
             for (ChatMessage message : request.messages()) {
                 event.append("\n### 消息 ").append(++index).append(" · ").append(message.role()).append("\n\n");
@@ -122,20 +136,83 @@ public final class ExecutionTrace implements AutoCloseable {
                 body(event, "工具定义", TraceRedactor.JSON.writerWithDefaultPrettyPrinter().writeValueAsString(schema), MAX_CONTENT_CHARS, false);
                 if (event.length() > fileLimit) throw new LimitReached();
             }
+    }
+
+    /** 没有接入 HTTP 观察器的自定义 SPI 仍显示逻辑消息，并明确标注覆盖范围。 */
+    public synchronized void logicalFallback(long requestId, ChatRequest request) {
+        if (disabled || closed) return;
+        try {
+            StringBuilder event = responseHeader(requestId, "逻辑请求备用记录", -1);
+            event.append("本次适配器未提供 HTTP 报文；下面是逻辑消息，不能视为实际网络报文。\n\n");
+            logicalBody(event, request);
             append(event.toString());
         } catch (LimitReached limit) { stop(true); }
         catch (Exception failure) { stop(false); }
-        return id;
+    }
+
+    public synchronized void wireRequest(long requestId, int attempt, String method, String endpoint, String value) {
+        wire(requestId, attempt, "HTTP 请求报文", method + " " + endpoint, value, false);
+    }
+
+    public synchronized void wireResponse(long requestId, int attempt, int status, String contentType,
+                                           String value, boolean truncated, String state) {
+        wire(requestId, attempt, "HTTP 响应报文", "HTTP " + (status == 0 ? "未收到响应头" : status)
+                + " · " + contentType + " · " + state, value, truncated);
+    }
+
+    private void wire(long requestId, int attempt, String title, String details, String value, boolean truncated) {
+        if (disabled || closed) return;
+        try {
+            if (!ensureOpen()) return;
+            StringBuilder event = responseHeader(requestId, title, -1);
+            field(event, "HTTP 尝试", Integer.toString(attempt));
+            field(event, "传输信息", details);
+            String raw = value == null ? "" : value;
+            field(event, "捕获长度", raw.length() + " 字符");
+            if (raw.length() > 8 * 1024 * 1024) {
+                // 先脱敏再截断，避免截断已知凭据后失去匹配条件。
+                raw = redactor.text(raw);
+                raw = raw.substring(0, Math.min(raw.length(), 8 * 1024 * 1024));
+                truncated = true;
+            }
+            if (truncated) event.append("**报文已截断：达到 8 MiB 字节/字符保护上限，不能重建完整报文。**\n\n");
+            JsonNode safe;
+            try { safe = redactor.json(raw); }
+            catch (Exception nonJson) { safe = TraceRedactor.JSON.getNodeFactory().textNode(redactor.text(raw)); }
+            field(event, "正文格式", safe.isContainerNode() ? "JSON（保留字段；已脱敏、格式化）" : "文本或 SSE（已脱敏）");
+            var projected = wirePayloads.project(safe);
+            var ids = projected.path("new_content").fieldNames();
+            while (ids.hasNext()) event.append("<a id=\"").append(ids.next()).append("\"></a>\n");
+            event.append("\n报文内容（body）、引用位置（references）、本次首次出现的内容（new_content）：\n\n");
+            codeBlock(event, TraceRedactor.JSON.writerWithDefaultPrettyPrinter().writeValueAsString(projected));
+            var refs = projected.path("references").fields();
+            if (refs.hasNext()) event.append("内容定位：");
+            var linked = new java.util.HashSet<String>();
+            while (refs.hasNext()) {
+                String reference = refs.next().getValue().asText();
+                if (linked.add(reference)) event.append(" [").append(reference).append("](#").append(reference).append(")");
+            }
+            event.append("\n\n");
+            append(event.toString());
+        } catch (LimitReached limit) { stop(true); }
+        catch (Exception failure) { stop(false); }
     }
 
     public synchronized void response(long requestId, ChatResponse response, long elapsedMillis) {
+        response(requestId, response, elapsedMillis, true);
+    }
+
+    public synchronized void response(long requestId, ChatResponse response, long elapsedMillis, boolean includeBody) {
         if (disabled || closed) return;
         try {
             if (!ensureOpen()) return;
             StringBuilder event = responseHeader(requestId, "模型回复", elapsedMillis);
             field(event, "结束原因", response.finishReason().name());
             usage(event, response.usage());
-            if ("reviewer".equals(requestSources.remove(requestId))) {
+            String source = requestSources.remove(requestId);
+            if (!includeBody) {
+                event.append("完整回复见同编号 HTTP 响应报文；此处不再重复展示正文。\n\n");
+            } else if ("reviewer".equals(source)) {
                 renderReview(event, response);
             } else {
                 body(event, "回复正文", response.text(), MAX_CONTENT_CHARS, false);
@@ -147,7 +224,7 @@ public final class ExecutionTrace implements AutoCloseable {
         catch (Exception failure) { stop(false); }
     }
 
-    /** 只在断流失败前记录一次已显示片段，不记录原始 SSE 分块或私有推理。 */
+    /** 仅在适配器未提供 HTTP 观察事件时，补充记录已显示片段。 */
     public synchronized void partial(long requestId, String text) {
         if (disabled || closed) return;
         try {
@@ -238,6 +315,7 @@ public final class ExecutionTrace implements AutoCloseable {
         closed = true;
         requestSources.clear();
         references.clear();
+        wirePayloads.clear();
         if (output != null) {
             try { output.close(); }
             catch (IOException | RuntimeException ignored) { warn(IO_WARNING); }
@@ -254,9 +332,9 @@ public final class ExecutionTrace implements AutoCloseable {
             StringBuilder header = new StringBuilder("# YLCoder 执行日志\n\n");
             field(header, "会话 ID", sessionId);
             field(header, "开始时间（UTC）", Instant.now().toString());
-            header.append("\n本文记录每次真实模型调用使用的、上下文整理后的厂商无关请求，以及已解析的回复和工具过程。内容已脱敏；不是原始 HTTP 报文。\n\n")
-                    .append("重复正文和工具定义引用本文件中的首次记录。工具结果最多展示 ").append(toolResultMaxChars)
-                    .append(" 字符；其他单段正文的保护上限为 1,048,576 字符。厂商不透明元数据和私有推理不落盘。\n\n")
+            header.append("\n本文记录实际 HTTP 请求与响应正文（已脱敏），以及模型用量、重试和工具过程。请求头不记录；URL 查询参数和用户信息省略。没有 HTTP 观察能力的适配器会明确标为逻辑请求备用记录。\n\n")
+                    .append("HTTP 报文的 body 保留协议结构；references 用 JSON Pointer 指向 new_content 首次保存的值，可在本文件定位还原。该占位仅影响日志，不修改发送内容。工具过程摘要最多展示 ").append(toolResultMaxChars)
+                    .append(" 字符；HTTP 正文独立保留，捕获上限为 8 MiB，达到上限或流中断会明确标记。JSON 会格式化；SSE 为实际读取的文本，不保证包含协议结束后未读取的字节。\n\n")
                     .append("单个任务文件最大 32 MiB；达到上限会明确停止记录并提示。日志异常不影响任务执行。\n");
             output.append(header.toString());
             return true;

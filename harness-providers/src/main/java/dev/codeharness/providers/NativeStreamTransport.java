@@ -29,6 +29,11 @@ final class NativeStreamTransport {
     private NativeStreamTransport() {}
 
     static String exchange(HttpClient client, HttpRequest request, Duration timeout, Predicate<String> onEvent, ProviderErrors errors) {
+        return exchange(client, request, timeout, onEvent, errors, "[调用方未提供请求正文]");
+    }
+
+    static String exchange(HttpClient client, HttpRequest request, Duration timeout, Predicate<String> onEvent, ProviderErrors errors, String requestBody) {
+        var trace = HttpExchangeTrace.start(request.method(), request.uri(), requestBody);
         var body = new AtomicReference<InputStream>();
         var httpFailure = new AtomicReference<ProviderException>();
         var abandoned = new AtomicBoolean();
@@ -36,7 +41,8 @@ final class NativeStreamTransport {
         var pending = executor.submit(() -> {
             try {
                 var response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
-                InputStream stream = response.body();
+                trace.headers(response.statusCode(), response.headers().firstValue("content-type").orElse(null));
+                InputStream stream = trace.capture(response.body());
                 body.set(stream);
                 if (abandoned.get()) throw new ProviderException("流式请求已取消");
                 if (response.statusCode() < 200 || response.statusCode() >= 300) {
@@ -72,7 +78,9 @@ final class NativeStreamTransport {
             }
         });
         try {
-            return pending.get(timeout.toNanos(), TimeUnit.NANOSECONDS);
+            String result = pending.get(timeout.toNanos(), TimeUnit.NANOSECONDS);
+            trace.finish("HTTP 正文读取结束（SSE 可能在协议结束标记处停止读取）");
+            return result;
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             throw new ProviderException("流式请求已中断");
@@ -83,6 +91,7 @@ final class NativeStreamTransport {
             if (failed.getCause() instanceof ProviderException provider) throw provider;
             throw TransportErrors.stream(failed.getCause());
         } finally {
+            trace.finish("响应读取未完成或厂商返回错误");
             abandoned.set(true);
             pending.cancel(true);
             closeAsync(body.getAndSet(null));

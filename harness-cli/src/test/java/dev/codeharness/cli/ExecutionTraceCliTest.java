@@ -72,9 +72,9 @@ class ExecutionTraceCliTest {
         assertTrue(log.contains("sample.txt"), log);
         assertTrue(log.contains("工具开始") && log.contains("工具完成"), log);
         assertTrue(log.contains("工具结果开头标记"), log);
-        assertFalse(log.contains("工具结果尾部标记"), log);
-        assertTrue(requests.getLast().toString().contains("工具结果尾部标记"), "截断只作用于日志，不改变发给模型的结果");
-        assertTrue(log.contains("已截断") && log.contains("首次记录"), log);
+        assertTrue(log.contains("工具结果尾部标记"), "实际请求报文应保留完整工具结果");
+        assertTrue(requests.getLast().toString().contains("工具结果尾部标记"), "工具预览限制不得缩短发给模型的结果");
+        assertTrue(log.contains("已截断") && log.contains("new_content"), log);
         assertTrue(log.contains(ANSWER), log);
         assertTrue(log.contains("输入 17") && log.contains("缓存输入 9"), log);
         assertEquals(1, count(log, "请读取 sample.txt 并记录本次提示词"));
@@ -129,7 +129,7 @@ class ExecutionTraceCliTest {
         String log = Files.readString(Path.of(JSON.readTree(run.out).path("traceFile").asText()));
         assertEquals(1, requests.size());
         assertTrue(delays.isEmpty());
-        assertTrue(log.contains("未完成回复片段") && log.contains("已显示的半段回复"), log);
+        assertTrue(log.contains("HTTP 响应报文") && log.contains("已显示的半段回复") && log.contains("fixture stream failed"), log);
         assertTrue(log.contains("模型请求失败"), log);
         assertFalse(log.contains("## 模型回复 #"), log);
     }
@@ -305,7 +305,7 @@ class ExecutionTraceCliTest {
         return count;
     }
     private static void assertReferencesResolve(String log) {
-        var references = Pattern.compile("\\(#(content-[0-9]+)\\)").matcher(log);
+        var references = Pattern.compile("\\(#((?:content|wire)-[0-9]+)\\)").matcher(log);
         int count = 0;
         while (references.find()) { assertTrue(log.contains("<a id=\"" + references.group(1) + "\"></a>"), log); count++; }
         assertTrue(count > 0, "重复内容应使用本文件锚点");

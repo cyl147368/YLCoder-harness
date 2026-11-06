@@ -157,6 +157,14 @@ public final class TraceRedactor {
         }
     }
 
+    JsonNode json(String value) throws java.io.IOException {
+        JsonNode node = JSON.readTree(value);
+        if (node == null) throw new java.io.IOException("空 JSON");
+        if (node.isTextual()) return JSON.getNodeFactory().textNode(text(node.textValue()));
+        scrub(node, 0);
+        return node;
+    }
+
     private void scrub(JsonNode value, int depth) {
         if (depth > 64) throw new IllegalArgumentException("日志 JSON 嵌套过深");
         if (value instanceof ObjectNode object) {

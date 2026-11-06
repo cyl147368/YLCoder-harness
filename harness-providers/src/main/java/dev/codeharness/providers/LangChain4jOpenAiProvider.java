@@ -16,7 +16,6 @@ import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.exception.HttpException;
-import dev.langchain4j.http.client.jdk.JdkHttpClient;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 import dev.langchain4j.model.chat.response.ChatModelStreamingEvent;
@@ -25,7 +24,6 @@ import dev.langchain4j.model.chat.response.PartialResponse;
 import dev.langchain4j.model.openai.OpenAiChatRequestParameters;
 import dev.langchain4j.model.openai.OpenAiTokenUsage;
 
-import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -65,8 +63,7 @@ public final class LangChain4jOpenAiProvider implements ModelProvider {
                     .logRequests(false)
                     .logResponses(false)
                     .customHeaders(headers)
-                    .httpClientBuilder(JdkHttpClient.builder().httpClientBuilder(
-                            HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER)));
+                    .httpClientBuilder(TracingSdkHttpClient.builder());
             if (config.baseUri() != null) builder.baseUrl(config.baseUri().toString());
             if (config.apiKey() != null && !config.apiKey().isBlank()) builder.apiKey(config.apiKey());
             try {
@@ -74,8 +71,7 @@ public final class LangChain4jOpenAiProvider implements ModelProvider {
                 var streamingBuilder = OpenAiStreamingChatModel.builder()
                         .modelName(config.model()).timeout(config.timeout())
                         .logRequests(false).logResponses(false).customHeaders(headers)
-                        .httpClientBuilder(JdkHttpClient.builder().httpClientBuilder(
-                                HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER)));
+                        .httpClientBuilder(TracingSdkHttpClient.builder());
                 if (config.baseUri() != null) streamingBuilder.baseUrl(config.baseUri().toString());
                 if (config.apiKey() != null && !config.apiKey().isBlank()) streamingBuilder.apiKey(config.apiKey());
                 // 流式 SDK 仅发起一次请求，未暴露重试选项。

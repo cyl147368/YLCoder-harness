@@ -5,6 +5,7 @@ import dev.codeharness.core.model.ChatModel;
 import dev.codeharness.core.model.ChatRequest;
 import dev.codeharness.core.model.ChatResponse;
 import dev.codeharness.core.model.ToolCall;
+import dev.codeharness.providers.HttpExchangeTrace;
 import java.nio.file.Path;
 import java.util.Collection;
 import java.util.LinkedHashSet;
@@ -91,11 +92,19 @@ final class TraceRecorder {
                 Capture capture = active.get();
                 if (capture == null) return streaming ? delegate.complete(request, listener) : delegate.complete(request);
                 capture.retain();
-                long id = capture.log.request(source, provider, model, streaming, capture.iteration.get(), request);
+                long id = capture.log.request(source, provider, model, streaming, capture.iteration.get(), request, false);
                 long started = System.nanoTime();
                 StringBuffer partial = new StringBuffer();
                 AtomicBoolean truncated = new AtomicBoolean();
-                try {
+                var wire = HttpExchangeTrace.observe(new HttpExchangeTrace.Listener() {
+                    public void request(int attempt, String method, String endpoint, String body) {
+                        capture.log.wireRequest(id, attempt, method, endpoint, body);
+                    }
+                    public void response(int attempt, int status, String contentType, String body, boolean truncated, String state) {
+                        capture.log.wireResponse(id, attempt, status, contentType, body, truncated, state);
+                    }
+                });
+                try (wire) {
                     ChatResponse response = streaming ? delegate.complete(request, text -> {
                         if (text != null) {
                             synchronized (partial) {
@@ -106,10 +115,12 @@ final class TraceRecorder {
                         }
                         if (listener != null) listener.accept(text);
                     }) : delegate.complete(request);
-                    capture.log.response(id, response, elapsed(started));
+                    if (!wire.observed()) capture.log.logicalFallback(id, request);
+                    capture.log.response(id, response, elapsed(started), !wire.observed());
                     return response;
                 } catch (RuntimeException | Error failure) {
-                    if (!partial.isEmpty()) capture.log.partial(id, partial + (truncated.get() ? "\n[部分回复摘要已截断]" : ""));
+                    if (!wire.observed()) capture.log.logicalFallback(id, request);
+                    if (!wire.observed() && !partial.isEmpty()) capture.log.partial(id, partial + (truncated.get() ? "\n[部分回复摘要已截断]" : ""));
                     capture.log.failure(id, failure, elapsed(started));
                     throw failure;
                 } finally { capture.release(); }

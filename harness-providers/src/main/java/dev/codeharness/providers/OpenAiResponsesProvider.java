@@ -37,13 +37,14 @@ public final class OpenAiResponsesProvider implements ModelProvider {
         @Override public ChatResponse complete(ChatRequest request, java.util.function.Consumer<String> onTextDelta) {
             try {
                 ObjectNode body = encode(request).put("stream", true);
+                String encodedBody = JSON.writeValueAsString(body);
                 var builder = java.net.http.HttpRequest.newBuilder(endpoint()).timeout(config.timeout())
                         .setHeader("Content-Type", "application/json").setHeader("Accept", "text/event-stream, application/json")
-                        .POST(java.net.http.HttpRequest.BodyPublishers.ofString(JSON.writeValueAsString(body)));
+                        .POST(java.net.http.HttpRequest.BodyPublishers.ofString(encodedBody));
                 protocolHeaders().forEach(builder::setHeader);
                 config.headers().forEach(builder::setHeader);
                 var stream = new OpenAiResponsesStream(onTextDelta, errors);
-                String fallback = NativeStreamTransport.exchange(client, builder.build(), config.timeout(), stream::onEvent, errors);
+                String fallback = NativeStreamTransport.exchange(client, builder.build(), config.timeout(), stream::onEvent, errors, encodedBody);
                 if (fallback == null) return stream.response(this::decode);
                 JsonNode payload = OpenAiResponsesStream.parse(fallback);
                 if (!payload.isObject() || !"completed".equals(payload.path("status").asText()) || payload.hasNonNull("error"))
