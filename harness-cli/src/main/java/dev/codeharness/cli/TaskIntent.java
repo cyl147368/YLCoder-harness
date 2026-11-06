@@ -13,7 +13,7 @@ final class TaskIntent {
         boolean allows(String tool) {
             return switch (mode) {
                 case CHAT -> false;
-                case ANALYZE, PLAN -> Set.of("list_files", "search_files", "read_file", "changes", "web_search", "web_fetch").contains(tool);
+                case ANALYZE, PLAN -> Set.of("list_files", "search_files", "read_file", "changes", "web_search", "web_fetch", "repository_map", "search_history", "read_tool_output").contains(tool);
                 default -> true;
             };
         }

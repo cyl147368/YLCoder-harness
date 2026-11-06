@@ -1,0 +1,5 @@
+{
+  "status": "PASS",
+  "modelRequests": 3,
+  "checks": "packaged CLI selects both encodings; CJK resume fails before network; UTF16 compatibility"
+}

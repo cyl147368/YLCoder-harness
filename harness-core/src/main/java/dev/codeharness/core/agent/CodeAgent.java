@@ -24,21 +24,37 @@ public final class CodeAgent {
     private final ChatModel model;
     private final ToolRegistry tools;
     private final ContextCompactor contextCompactor;
+    private final ContextManager contextManager;
+    private final ToolOutputStore outputStore;
 
     public CodeAgent(ChatModel model, ToolRegistry tools) {
         this(model, tools, new ContextCompactor());
     }
 
     public CodeAgent(ChatModel model, ToolRegistry tools, ContextCompactor contextCompactor) {
+        this(model, tools, contextCompactor, ContextPolicy.disabled(), null, ToolOutputStore.CLIP);
+    }
+
+    public CodeAgent(ChatModel model, ToolRegistry tools, ContextCompactor contextCompactor, ContextPolicy policy,
+                     ContextSummarizer summarizer, ToolOutputStore outputStore) {
         this.model = Objects.requireNonNull(model, "model");
         this.tools = Objects.requireNonNull(tools, "tools");
         this.contextCompactor = Objects.requireNonNull(contextCompactor, "contextCompactor");
+        this.contextManager = new ContextManager(contextCompactor, policy, summarizer);
+        this.outputStore = Objects.requireNonNull(outputStore);
     }
 
     /** 同时约束请求中的工具结构和实际执行查找，不改变原代理。 */
     public CodeAgent withTools(java.util.function.Predicate<Tool> allowed) {
-        return new CodeAgent(model, tools.filter(allowed), contextCompactor);
+        return new CodeAgent(model, tools.filter(allowed), contextCompactor, contextManager, outputStore);
     }
+
+    private CodeAgent(ChatModel model, ToolRegistry tools, ContextCompactor compactor, ContextManager manager, ToolOutputStore outputStore) {
+        this.model = model; this.tools = tools; this.contextCompactor = compactor;
+        this.contextManager = manager; this.outputStore = outputStore;
+    }
+
+    public void restoreContext(ContextSnapshot snapshot) { contextManager.restore(snapshot); }
 
     public AgentResult run(String task, AgentRunOptions options) {
         return run(task, options, AgentListener.NOOP);
@@ -78,8 +94,11 @@ public final class CodeAgent {
                     break;
                 }
                 // 压缩只生成本次模型请求的投影；完整 transcript 用于检查点、历史展示和恢复。
-                List<ChatMessage> requestMessages = contextCompactor.compact(
-                        transcript, messageBudget, options.maxToolOutputChars());
+                var projection = contextManager.project(transcript, messageBudget, options.maxToolOutputChars());
+                usage = usage.plus(projection.summaryUsage());
+                observer.onContextCheckpoint(projection.snapshot());
+                notifySafely(() -> observer.onContext(projection.metrics()));
+                List<ChatMessage> requestMessages = projection.messages();
                 final int currentIteration = iteration;
                 ChatRequest request = new ChatRequest(requestMessages, tools.definitions(), options.maxOutputTokens());
                 notifySafely(() -> observer.onModelRequest(currentIteration, request));
@@ -225,7 +244,7 @@ public final class CodeAgent {
         return Thread.currentThread().isInterrupted() || options.cancelled().getAsBoolean();
     }
 
-    private static ToolResult executeTool(ToolCall call, Tool target, int limit) {
+    private ToolResult executeTool(ToolCall call, Tool target, int limit) {
         boolean failed = target == null;
         boolean interrupted = false;
         String output;
@@ -246,7 +265,11 @@ public final class CodeAgent {
                 output = "工具失败：" + (reason == null || reason.isBlank() ? toolFailure.getClass().getSimpleName() : reason);
             }
         }
-        return new ToolResult(ContextCompactor.clipMiddle(output, limit), failed,
+        try { output = outputStore.store(call.id(), output, limit); }
+        catch (Exception archiveFailure) {
+            throw new IllegalStateException("工具结果存档失败；原始结果未能持久化，请检查本地目录权限与容量", archiveFailure);
+        }
+        return new ToolResult(output, failed,
                 interrupted || Thread.currentThread().isInterrupted());
     }
 

@@ -1,0 +1,46 @@
+{
+  "generatedAt": "2026-11-05T08:55:44.410Z",
+  "date": "2026-11-05",
+  "timezone": "Asia/Shanghai",
+  "baseCommit": "5ddf02d5c89b337ab1e2812b616d31b3eeae9bdf",
+  "testedState": "上述基线加本次未提交的上下文优化工作区变更",
+  "environment": {
+    "os": "Windows 11",
+    "java": "21.0.10",
+    "maven": "3.9.14",
+    "api": "仅本地 HTTP 模拟服务"
+  },
+  "jar": {
+    "path": "harness-cli/target/harness-cli-0.1.0-SNAPSHOT-all.jar",
+    "sha256": "7d4e6c9863386f14b40a28317acece43ba7d936239f670f4e445912cdada52b3",
+    "bytes": 11728617
+  },
+  "verification": {
+    "build": "SUCCESS",
+    "tests": 918,
+    "passed": 902,
+    "skipped": 16,
+    "failures": 0,
+    "errors": 0,
+    "contextScenarios": 4,
+    "executionTraceScenarios": 9,
+    "responsesScenarios": 5,
+    "tokenBudgetSmoke": "PASS",
+    "intentSmoke": "PASS",
+    "benchmarkRows": 8,
+    "packagedLocalhostRequests": 85
+  },
+  "scripts": {
+    "scripts/smoke_context_optimization.py": "a0aff8a35398f127c7956fec6245fdf76b2d24ef3248c91cc2d3f3dcd1e54079",
+    "scripts/smoke_execution_trace.py": "1c164ab6f1fbf0ea1b018d9cfb209badff135a6551bc766f42032e3484e8bc78",
+    "scripts/smoke_responses.py": "64d59578b747e5eb34ef3269814f40200fdfeed2b26cd30b66fb5848f028c715",
+    "scripts/smoke_token_budget.py": "172c8760d0c53754353cf2e6c1f6a6816e46d3667c627697095e077eeb598279",
+    "scripts/smoke_intent.py": "12f565c93ba7b59ae43b02fdd5b0b50620b89bb7eca9447b16c1e08290a9d4aa",
+    "harness-cli/src/main/java/dev/codeharness/cli/ContextOptimizationBenchmark.java": "32fa60d1aee57f1745189fda021be12189022a07230de69ed92c5d708fd41033"
+  },
+  "notes": [
+    "14项符号链接条件测试及2项POSIX权限测试因当前平台前提不满足而跳过。",
+    "性能数据来自本地夹具和进程启动，不能据此推断真实厂商延迟、计费或摘要语义质量。",
+    "摘要成本计入本地token对照；不将固定模拟响应的usage字段当作实测计费token。"
+  ]
+}

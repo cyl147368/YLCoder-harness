@@ -47,7 +47,20 @@ public final class HarnessConfig {
         @JsonProperty("max-iterations") @Deprecated public int maxIterations = 30;
         @JsonProperty("parallel-reads") public int parallelReads = 1;
         @JsonProperty("context-budget-tokens") public int contextBudgetTokens = 48_000;
-        @JsonProperty("token-counter") public String tokenCounter = "utf16";
+        /** auto 按已知模型选分词器；未知模型采用带余量的多语言本地估算。 */
+        @JsonProperty("token-counter") public String tokenCounter = "auto";
+        /** 显式窗口优先于内置目录；按模型配置的窗口优先于该通用值。 */
+        @JsonProperty("context-window-tokens") public Integer contextWindowTokens;
+        @JsonProperty("model-context-windows") public Map<String, Integer> modelContextWindows = Map.of();
+        @JsonProperty("context-safety-margin-tokens") public int contextSafetyMarginTokens = 2048;
+        @JsonProperty("reasoning-reserve-tokens") public int reasoningReserveTokens = 0;
+        @JsonProperty("context-semantic") public boolean contextSemantic = true;
+        @JsonProperty("context-trigger-ratio") public double contextTriggerRatio = 0.85;
+        @JsonProperty("context-target-ratio") public double contextTargetRatio = 0.65;
+        @JsonProperty("context-recent-turns") public int contextRecentTurns = 4;
+        @JsonProperty("context-summary-max-tokens") public int contextSummaryMaxTokens = 1500;
+        /** 空对象沿用主模型连接；可以独立指定摘要模型与端点。 */
+        @JsonProperty("context-summarizer") public Reviewer contextSummarizer = new Reviewer();
         @JsonProperty("max-tool-output-chars") public int maxToolOutputChars = 12_000;
         @JsonProperty("max-output-tokens") public Integer maxOutputTokens = 3_000;
     }

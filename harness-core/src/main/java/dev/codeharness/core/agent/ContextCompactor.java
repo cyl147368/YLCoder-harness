@@ -26,15 +26,30 @@ public final class ContextCompactor {
     }
 
     public List<ChatMessage> compact(List<ChatMessage> input, int tokenBudget, int maxToolOutputChars) {
+        return compact(input, tokenBudget, maxToolOutputChars, false);
+    }
+
+    /** 语义整理的兜底路径保留全部用户原文；预算不足时明确失败，避免静默遗失用户约束。 */
+    public List<ChatMessage> compact(List<ChatMessage> input, int tokenBudget, int maxToolOutputChars, boolean preserveUsers) {
+        return compact(input, tokenBudget, maxToolOutputChars, preserveUsers, null);
+    }
+
+    /** 系统生成的语义摘要通过消息对象身份保护，不能被用户伪造同名标记触发。 */
+    public List<ChatMessage> compact(List<ChatMessage> input, int tokenBudget, int maxToolOutputChars,
+                                     boolean preserveUsers, ChatMessage retainedSummary) {
+        if (retainedSummary != null && (retainedSummary.role() != ChatMessage.Role.ASSISTANT
+                || !retainedSummary.toolCalls().isEmpty()
+                || input.stream().noneMatch(message -> message == retainedSummary)))
+            throw new IllegalArgumentException("受保护摘要必须是当前请求内的独立助手消息对象");
         if (tokenBudget < 1) throw new IllegalArgumentException("tokenBudget 必须为正数");
         if (maxToolOutputChars < 1) throw new IllegalArgumentException("maxToolOutputChars 必须为正数");
         Summary summary = new Summary();
         List<ChatMessage> messages = new ArrayList<>();
         for (ChatMessage message : input) {
-            if (!summary.consume(message)) messages.add(compactToolOutput(message, maxToolOutputChars));
+            if (message == retainedSummary || !summary.consume(message)) messages.add(compactToolOutput(message, maxToolOutputChars));
         }
         List<Block> blocks = blocks(messages);
-        protectRequiredBlocks(blocks);
+        protectRequiredBlocks(blocks, preserveUsers, retainedSummary);
         List<ChatMessage> result = assemble(blocks, summary);
         for (Block block : blocks) {
             if (estimateTokens(result) <= tokenBudget) break;
@@ -45,7 +60,7 @@ public final class ContextCompactor {
         }
         // 自动生成的数量摘要是可选的；厂商回放证据不可拆分。
         if (estimateTokens(result) > tokenBudget && summary.messages > 0) result = assemble(blocks, null);
-        if (estimateTokens(result) > tokenBudget) shrinkContents(result, tokenBudget);
+        if (estimateTokens(result) > tokenBudget) shrinkContents(result, tokenBudget, retainedSummary);
         int estimatedTokens = estimateTokens(result);
         if (estimatedTokens > tokenBudget) {
             throw new IllegalArgumentException("压缩后上下文约需要 " + estimatedTokens
@@ -95,15 +110,17 @@ public final class ContextCompactor {
         return new IllegalArgumentException("会话中有未匹配或重复的工具调用及结果；压缩前请修复会话。");
     }
 
-    private void protectRequiredBlocks(List<Block> blocks) {
+    private void protectRequiredBlocks(List<Block> blocks, boolean preserveUsers, ChatMessage retainedSummary) {
         Block originalTask = null;
         Block latestUser = null;
         Block latestAssistant = null;
         Block latestToolCycle = null;
         for (Block block : blocks) {
             ChatMessage first = block.messages.getFirst();
+            if (block.messages.stream().anyMatch(message -> message == retainedSummary)) block.required = true;
             if (first.role() == ChatMessage.Role.SYSTEM) block.required = true;
             if (first.role() == ChatMessage.Role.USER) {
+                if (preserveUsers) block.required = true;
                 if (originalTask == null) originalTask = block;
                 latestUser = block;
             }
@@ -140,9 +157,10 @@ public final class ContextCompactor {
         return withContent(message, clipMiddle(message.content(), limit));
     }
 
-    private void shrinkContents(List<ChatMessage> messages, int tokenBudget) {
+    private void shrinkContents(List<ChatMessage> messages, int tokenBudget, ChatMessage retainedSummary) {
         for (int i = 0; i < messages.size() && estimateTokens(messages) > tokenBudget; i++) {
             ChatMessage message = messages.get(i);
+            if (message == retainedSummary) continue;
             if (message.role() == ChatMessage.Role.SYSTEM || message.role() == ChatMessage.Role.USER) continue;
             if (hasReplayEvidence(message)) continue;
             if (message.content().isEmpty()) continue;

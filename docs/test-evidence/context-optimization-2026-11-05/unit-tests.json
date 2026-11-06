@@ -1,0 +1,109 @@
+{
+  "generatedAt": "2026-11-05T08:55:44.410Z",
+  "build": "SUCCESS",
+  "modules": [
+    {
+      "module": "harness-core",
+      "tests": 63,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "harness-providers",
+      "tests": 132,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "harness-cli",
+      "tests": 723,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 16
+    }
+  ],
+  "skipped": [
+    {
+      "module": "harness-cli",
+      "test": "dev.codeharness.cli.approval.CommandReviewTest.symlinkWorkspaceAndFileWorkspaceNeverReachModel",
+      "reason": "org.opentest4j.TestAbortedException: Assumption failed: 当前平台不能创建符号链接"
+    },
+    {
+      "module": "harness-cli",
+      "test": "dev.codeharness.cli.approval.MavenBuildExecutionTest.项目配置文件链接到外部时不能交审核模型放行",
+      "reason": "org.opentest4j.TestAbortedException: Assumption failed: 当前环境无法创建符号链接：FileSystemException"
+    },
+    {
+      "module": "harness-cli",
+      "test": "dev.codeharness.cli.SessionStoreTest.checkpointsAndLocksUsePrivatePosixPermissions",
+      "reason": "org.opentest4j.TestAbortedException: Assumption failed: POSIX 权限不可用"
+    },
+    {
+      "module": "harness-cli",
+      "test": "dev.codeharness.cli.SessionStoreTest.rejectsSymlinkCheckpointAndLockFile",
+      "reason": "org.opentest4j.TestAbortedException: Assumption failed: 符号链接不可用"
+    },
+    {
+      "module": "harness-cli",
+      "test": "dev.codeharness.cli.tools.NativeReadOnlyQueryTest.excludesSymlinksEvenWhenTheirTargetsAreInsideWorkspace",
+      "reason": "org.opentest4j.TestAbortedException: Assumption failed: 当前平台不允许创建符号链接：E:\\github\\YLCoder-harness\\target\\test-tmp\\junit-1352699260084836883\\workspace\\external: 客户端没有所需的特权。"
+    },
+    {
+      "module": "harness-cli",
+      "test": "dev.codeharness.cli.tools.NativeSearchExecutionTest.符号链接目录及文件不会进入正文查询",
+      "reason": "org.opentest4j.TestAbortedException: Assumption failed: 当前平台不允许创建符号链接：E:\\github\\YLCoder-harness\\target\\test-tmp\\junit-17693953507032770007\\workspace\\directory-link: 客户端没有所需的特权。"
+    },
+    {
+      "module": "harness-cli",
+      "test": "dev.codeharness.cli.tools.RepositoryMapTest.linkAndRedirectedRootDoNotExposeDeclarations",
+      "reason": "org.opentest4j.TestAbortedException: Assumption failed: 平台不能创建符号链接"
+    },
+    {
+      "module": "harness-cli",
+      "test": "dev.codeharness.cli.tools.WhereReadOnlyQueryTest.跳过符号链接文件和目录",
+      "reason": "org.opentest4j.TestAbortedException: Assumption failed: 当前平台不允许创建符号链接：E:\\github\\YLCoder-harness\\target\\test-tmp\\junit-4668442094597953886\\workspace\\directory-link: 客户端没有所需的特权。"
+    },
+    {
+      "module": "harness-cli",
+      "test": "dev.codeharness.cli.tools.WorkspaceToolsTest.editRejectsTraversalAndSymlinkTargets",
+      "reason": "org.opentest4j.TestAbortedException: Assumption failed: 当前平台未授予创建符号链接的权限：E:\\github\\YLCoder-harness\\target\\test-tmp\\junit-5386608043567311888\\workspace\\link.txt: 客户端没有所需的特权。"
+    },
+    {
+      "module": "harness-cli",
+      "test": "dev.codeharness.cli.tools.WorkspaceToolsTest.refusesWritingThroughEscapingDirectorySymlinks",
+      "reason": "org.opentest4j.TestAbortedException: Assumption failed: 当前平台未授予创建符号链接的权限：E:\\github\\YLCoder-harness\\target\\test-tmp\\junit-3214600847591906129\\workspace\\linked: 客户端没有所需的特权。"
+    },
+    {
+      "module": "harness-cli",
+      "test": "dev.codeharness.cli.tools.WorkspaceToolsTest.doesNotReadOrSearchOutsideSymlinks",
+      "reason": "org.opentest4j.TestAbortedException: Assumption failed: 当前平台未授予创建符号链接的权限：E:\\github\\YLCoder-harness\\target\\test-tmp\\junit-9010197725171504678\\workspace\\link.txt: 客户端没有所需的特权。"
+    },
+    {
+      "module": "harness-cli",
+      "test": "dev.codeharness.cli.tools.WorkspaceToolsTest.atomicWritesAndEditsPreservePosixExecutableBits",
+      "reason": "org.opentest4j.TestAbortedException: Assumption failed: POSIX 权限测试"
+    },
+    {
+      "module": "harness-cli",
+      "test": "dev.codeharness.cli.trace.ExecutionTraceTest.refusesSymlinkLogsAndDoesNotTouchDestination",
+      "reason": "org.opentest4j.TestAbortedException: Assumption failed: 当前环境不支持创建符号链接"
+    },
+    {
+      "module": "harness-cli",
+      "test": "dev.codeharness.cli.trace.ToolOutputArchiveTest.redirectedDirectoryIsRejectedAndNoOutsideWriteOccurs",
+      "reason": "org.opentest4j.TestAbortedException: Assumption failed: 平台不能创建符号链接"
+    },
+    {
+      "module": "harness-cli",
+      "test": "dev.codeharness.cli.TraceFilesTest.linkedLogsRootIsRejected",
+      "reason": "org.opentest4j.TestAbortedException: 当前环境不能建立符号链接：FileSystemException"
+    },
+    {
+      "module": "harness-cli",
+      "test": "dev.codeharness.cli.TraceFilesTest.linkedSessionAndLogCannotExposeAnotherDirectory",
+      "reason": "org.opentest4j.TestAbortedException: 当前环境不能建立符号链接：FileSystemException"
+    }
+  ]
+}

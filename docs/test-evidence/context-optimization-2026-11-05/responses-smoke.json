@@ -1,0 +1,238 @@
+{
+  "status": "PASS",
+  "cases": [
+    {
+      "case": "config-responses-sse",
+      "status": "PASS",
+      "mainRequests": 2,
+      "reviewRequests": 1,
+      "chatCompletionsRequests": 0,
+      "sseResponses": 2,
+      "sseEvents": 10,
+      "streamFallbackDelaySeconds": null,
+      "savedProvider": "openai-responses",
+      "restoredSameSession": false,
+      "encryptedReasoningItems": 2,
+      "usage": {
+        "inputTokens": 37,
+        "outputTokens": 10,
+        "cachedInputTokens": 12
+      },
+      "usageReport": {
+        "requests": 3,
+        "total": {
+          "inputTokens": 37,
+          "outputTokens": 10,
+          "cachedInputTokens": 12
+        },
+        "inputReportedRequests": 3,
+        "outputReportedRequests": 3,
+        "cacheReportedRequests": 3,
+        "cacheHitRatePercent": 32.432432432432435,
+        "reportedCacheHitRatePercent": 32.432432432432435,
+        "scope": "current-task"
+      },
+      "review": {
+        "requests": 1,
+        "approved": 1,
+        "cacheHits": 0,
+        "manual": 0,
+        "usage": {
+          "inputTokens": 11,
+          "outputTokens": 4,
+          "cachedInputTokens": 2
+        },
+        "unreportedRequests": 0,
+        "localApprovals": 0,
+        "elapsedMillis": 27
+      }
+    },
+    {
+      "case": "cli-overrides-chat",
+      "status": "PASS",
+      "mainRequests": 2,
+      "reviewRequests": 1,
+      "chatCompletionsRequests": 0,
+      "sseResponses": 2,
+      "sseEvents": 10,
+      "streamFallbackDelaySeconds": null,
+      "savedProvider": "openai-responses",
+      "restoredSameSession": false,
+      "encryptedReasoningItems": 2,
+      "usage": {
+        "inputTokens": 37,
+        "outputTokens": 10,
+        "cachedInputTokens": 12
+      },
+      "usageReport": {
+        "requests": 3,
+        "total": {
+          "inputTokens": 37,
+          "outputTokens": 10,
+          "cachedInputTokens": 12
+        },
+        "inputReportedRequests": 3,
+        "outputReportedRequests": 3,
+        "cacheReportedRequests": 3,
+        "cacheHitRatePercent": 32.432432432432435,
+        "reportedCacheHitRatePercent": 32.432432432432435,
+        "scope": "current-task"
+      },
+      "review": {
+        "requests": 1,
+        "approved": 1,
+        "cacheHits": 0,
+        "manual": 0,
+        "usage": {
+          "inputTokens": 11,
+          "outputTokens": 4,
+          "cachedInputTokens": 2
+        },
+        "unreportedRequests": 0,
+        "localApprovals": 0,
+        "elapsedMillis": 46
+      }
+    },
+    {
+      "case": "cli-responses-resume",
+      "status": "PASS",
+      "mainRequests": 3,
+      "reviewRequests": 1,
+      "chatCompletionsRequests": 0,
+      "sseResponses": 3,
+      "sseEvents": 14,
+      "streamFallbackDelaySeconds": null,
+      "savedProvider": "openai-responses",
+      "restoredSameSession": true,
+      "encryptedReasoningItems": 3,
+      "usage": {
+        "inputTokens": 37,
+        "outputTokens": 10,
+        "cachedInputTokens": 12
+      },
+      "usageReport": {
+        "requests": 3,
+        "total": {
+          "inputTokens": 37,
+          "outputTokens": 10,
+          "cachedInputTokens": 12
+        },
+        "inputReportedRequests": 3,
+        "outputReportedRequests": 3,
+        "cacheReportedRequests": 3,
+        "cacheHitRatePercent": 32.432432432432435,
+        "reportedCacheHitRatePercent": 32.432432432432435,
+        "scope": "current-task"
+      },
+      "review": {
+        "requests": 1,
+        "approved": 1,
+        "cacheHits": 0,
+        "manual": 0,
+        "usage": {
+          "inputTokens": 11,
+          "outputTokens": 4,
+          "cachedInputTokens": 2
+        },
+        "unreportedRequests": 0,
+        "localApprovals": 0,
+        "elapsedMillis": 41
+      }
+    },
+    {
+      "case": "legacy-responses",
+      "status": "PASS",
+      "mainRequests": 2,
+      "reviewRequests": 1,
+      "chatCompletionsRequests": 0,
+      "sseResponses": 0,
+      "sseEvents": 0,
+      "streamFallbackDelaySeconds": null,
+      "savedProvider": "openai-responses",
+      "restoredSameSession": false,
+      "encryptedReasoningItems": 2,
+      "usage": {
+        "inputTokens": 37,
+        "outputTokens": 10,
+        "cachedInputTokens": 12
+      },
+      "usageReport": {
+        "requests": 3,
+        "total": {
+          "inputTokens": 37,
+          "outputTokens": 10,
+          "cachedInputTokens": 12
+        },
+        "inputReportedRequests": 3,
+        "outputReportedRequests": 3,
+        "cacheReportedRequests": 3,
+        "cacheHitRatePercent": 32.432432432432435,
+        "reportedCacheHitRatePercent": 32.432432432432435,
+        "scope": "current-task"
+      },
+      "review": {
+        "requests": 1,
+        "approved": 1,
+        "cacheHits": 0,
+        "manual": 0,
+        "usage": {
+          "inputTokens": 11,
+          "outputTokens": 4,
+          "cachedInputTokens": 2
+        },
+        "unreportedRequests": 0,
+        "localApprovals": 0,
+        "elapsedMillis": 36
+      }
+    },
+    {
+      "case": "responses-stream400",
+      "status": "PASS",
+      "mainRequests": 3,
+      "reviewRequests": 1,
+      "chatCompletionsRequests": 0,
+      "sseResponses": 0,
+      "sseEvents": 0,
+      "streamFallbackDelaySeconds": 1.057,
+      "savedProvider": "openai-responses",
+      "restoredSameSession": false,
+      "encryptedReasoningItems": 2,
+      "usage": {
+        "inputTokens": 37,
+        "outputTokens": 10,
+        "cachedInputTokens": 12
+      },
+      "usageReport": {
+        "requests": 4,
+        "total": {
+          "inputTokens": 37,
+          "outputTokens": 10,
+          "cachedInputTokens": 12
+        },
+        "inputReportedRequests": 3,
+        "outputReportedRequests": 3,
+        "cacheReportedRequests": 3,
+        "cacheHitRatePercent": null,
+        "reportedCacheHitRatePercent": 32.432432432432435,
+        "scope": "current-task"
+      },
+      "review": {
+        "requests": 1,
+        "approved": 1,
+        "cacheHits": 0,
+        "manual": 0,
+        "usage": {
+          "inputTokens": 11,
+          "outputTokens": 4,
+          "cachedInputTokens": 2
+        },
+        "unreportedRequests": 0,
+        "localApprovals": 0,
+        "elapsedMillis": 30
+      }
+    }
+  ],
+  "chatCompletionsRequests": 0,
+  "localhostRequests": 17,
+  "scope": "独立 CLI 进程和隔离 home；仅 localhost Responses 模拟服务；仅查询日期，不运行 Maven，不调用真实厂商。"
+}

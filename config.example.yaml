@@ -33,8 +33,32 @@ agent:
   # 流式 HTTP 400、可降级的流内错误或网络断连/超时，且尚无文本输出时，等待 1、2、4 秒改用非流式重试，最多 3 次；false 关闭。
   stream-fallback: true
   parallel-reads: 1
+  # 用户设定的输入上限；实际还会扣除模型输出、推理和安全预留。
   context-budget-tokens: 48000
-  token-counter: utf16
+  # auto 对已知模型选本地分词器；未知自定义模型用保守估算。
+  # 显式可选 auto、cl100k、o200k、conservative、utf16。
+  token-counter: auto
+  # 自定义模型建议填写厂商公布的总上下文容量；不要把输出上限填到这里。
+  # context-window-tokens: 128000
+  # 模型专属配置优先于通用容量，键必须与实际 model 完全相同。
+  model-context-windows: {}
+  # model-context-windows:
+  #   YOUR_MODEL_ID: 128000
+  context-safety-margin-tokens: 2048
+  reasoning-reserve-tokens: 0
+  # 超过有效消息预算的85%整理旧轮次，目标65%，保留最近4轮。
+  # 完整会话仍保存；全部用户原文、系统规则和厂商回放证据不会被摘要替代。
+  context-semantic: true
+  context-trigger-ratio: 0.85
+  context-target-ratio: 0.65
+  context-recent-turns: 4
+  context-summary-max-tokens: 1500
+  # 无工具的独立摘要请求，默认沿用主连接；可能产生额外模型用量。
+  # 可仅指定 model 使用同厂商另一模型。跨厂商或URL时请单独配置凭据。
+  context-summarizer: {}
+  # context-summarizer:
+  #   model: YOUR_SUMMARY_MODEL_ID
+  #   api-format: responses
   max-tool-output-chars: 12000
   max-output-tokens: 3000
 

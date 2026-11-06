@@ -17,8 +17,8 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Pattern;
 
-/** 只用于本地追踪文件；先脱敏，再做摘要、去重和截断。 */
-final class TraceRedactor {
+/** 供追踪、历史摘要和工具存档共用的凭据脱敏器；先脱敏，再截断。 */
+public final class TraceRedactor {
     static final String MASK = "[已脱敏]";
     static final ObjectMapper JSON = new ObjectMapper(JsonFactory.builder()
             .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build()).enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
@@ -34,7 +34,7 @@ final class TraceRedactor {
     private final Set<String> secrets = new LinkedHashSet<>();
     private List<String> replacements = List.of();
 
-    TraceRedactor(Collection<String> values) { add(values); }
+    public TraceRedactor(Collection<String> values) { add(values); }
 
     void add(Collection<String> values) {
         if (values == null) return;
@@ -58,7 +58,7 @@ final class TraceRedactor {
         replacements = List.copyOf(ordered);
     }
 
-    String text(String value) {
+    public String text(String value) {
         String result = value == null ? "" : value;
         for (String secret : replacements) result = result.replace(secret, MASK);
         result = HEADER_LINE.matcher(result).replaceAll("$1" + MASK);

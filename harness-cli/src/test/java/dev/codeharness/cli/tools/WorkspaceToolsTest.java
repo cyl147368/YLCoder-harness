@@ -2,6 +2,19 @@ package dev.codeharness.cli.tools;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.codeharness.core.tool.ToolRegistry;
+import dev.codeharness.core.agent.AgentResult;
+import dev.codeharness.core.agent.AgentRunOptions;
+import dev.codeharness.core.agent.CodeAgent;
+import dev.codeharness.core.agent.ContextCompactor;
+import dev.codeharness.core.agent.ContextPolicy;
+import dev.codeharness.core.model.ChatMessage;
+import dev.codeharness.core.model.ChatModel;
+import dev.codeharness.core.model.ChatResponse;
+import dev.codeharness.core.model.ToolCall;
+import dev.codeharness.core.model.TokenUsage;
+import dev.codeharness.core.model.FinishReason;
+import dev.codeharness.core.tool.Tool;
+import dev.codeharness.cli.trace.ToolOutputArchive;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
@@ -16,6 +29,9 @@ import java.util.Map;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.ArrayList;
+import java.util.regex.Pattern;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -264,6 +280,55 @@ class WorkspaceToolsTest {
         assertTrue(result.length() < 11_100);
     }
 
+    @Test void archivedCommandSurvivesAgentProjectionAndRetrievesMiddleFailure() throws Exception {
+        Path workspace = temporary.resolve("workspace");
+        var archive = new ToolOutputArchive(workspace, List.of("fixture-sensitive"));
+        ToolRegistry workspaceTools = WorkspaceTools.createWithCommandApproval(workspace,
+                request -> CommandApproval.Decision.shell(), archive);
+        var registered = new ArrayList<Tool>();
+        for (var definition : workspaceTools.definitions()) registered.add(workspaceTools.find(definition.name()).orElseThrow());
+        registered.add(archive.readerTool());
+        var expectedId = new AtomicReference<String>();
+        var requestCount = new AtomicInteger();
+        String command = fixtureCommand("archive-output");
+        ChatModel model = request -> {
+            int step = requestCount.incrementAndGet();
+            if (step == 1) {
+                return new ChatResponse("", List.of(new ToolCall("command-call", "run_command",
+                        "{\"command\":\"" + command.replace("\\", "\\\\").replace("\"", "\\\"") + "\"}")), TokenUsage.ZERO, FinishReason.TOOL_CALLS);
+            }
+            ChatMessage lastTool = request.messages().stream().filter(message -> message.role() == ChatMessage.Role.TOOL)
+                    .reduce((first, second) -> second).orElseThrow();
+            if (step == 2) {
+                assertTrue(lastTool.content().length() <= 1_000);
+                assertTrue(lastTool.content().contains("ERROR archived-middle-canary"));
+                var match = Pattern.compile("archive_id=([a-f0-9]{64})").matcher(lastTool.content());
+                assertTrue(match.find(), lastTool.content());
+                expectedId.set(match.group(1));
+                return new ChatResponse("", List.of(new ToolCall("read-call", "read_tool_output",
+                        "{\"archive_id\":\"" + expectedId.get() + "\",\"start_line\":2001,\"end_line\":2004}")), TokenUsage.ZERO, FinishReason.TOOL_CALLS);
+            }
+            assertEquals(3, step);
+            assertTrue(lastTool.content().contains("ERROR archived-middle-canary"));
+            assertFalse(lastTool.content().contains("fixture-sensitive"));
+            return ChatResponse.text("已定位中段错误并读取原文");
+        };
+        var agent = new CodeAgent(model, new ToolRegistry(registered), new ContextCompactor(), ContextPolicy.disabled(), null, archive);
+        AgentResult result = agent.run("执行本地夹具并定位中段错误",
+                new AgentRunOptions("使用本地测试工具", 5, 100_000, 500, 1_000, () -> false));
+        assertEquals(AgentResult.Status.COMPLETED, result.status(), result.error());
+        assertEquals(3, requestCount.get());
+        String original = Files.readString(workspace.resolve(".harness/artifacts/" + expectedId.get() + ".txt"));
+        assertTrue(original.startsWith("退出码：0\n"), original.substring(0, Math.min(100, original.length())));
+        assertTrue(original.contains("ERROR archived-middle-canary"));
+        assertTrue(original.contains("[已脱敏]"));
+        assertFalse(original.contains("fixture-sensitive"));
+        assertTrue(original.length() > 11_000);
+        try (var files = Files.list(workspace.resolve(".harness/artifacts"))) {
+            assertEquals(1, files.filter(path -> path.toString().endsWith(".txt")).count());
+        }
+    }
+
     @Test void interruptionDuringApprovalPreventsCommandLaunch() throws Exception {
         ToolRegistry tools = WorkspaceTools.create(temporary.resolve("workspace"), ignored -> {
             Thread.currentThread().interrupt();
@@ -303,6 +368,13 @@ class WorkspaceToolsTest {
         public static void main(String[] args) throws Exception {
             if (args[0].equals("output")) {
                 System.out.write("x".repeat(512_000).getBytes(StandardCharsets.UTF_8));
+                return;
+            }
+            if (args[0].equals("archive-output")) {
+                System.out.print("normal-log\n".repeat(2000));
+                System.out.println("ERROR archived-middle-canary");
+                System.out.println("fixture-sensitive");
+                System.out.print("normal-log\n".repeat(2000));
                 return;
             }
             if (args[0].equals("tree")) {

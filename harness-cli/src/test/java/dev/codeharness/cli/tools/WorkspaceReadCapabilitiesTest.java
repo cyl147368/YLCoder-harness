@@ -20,7 +20,7 @@ class WorkspaceReadCapabilitiesTest {
             Tool tool = registry.find(definition.name()).orElseThrow();
             if (tool.isParallelSafeRead()) safe.add(definition.name());
         }
-        assertEquals(Set.of("list_files", "search_files", "read_file"), safe);
+        assertEquals(Set.of("list_files", "search_files", "read_file", "repository_map"), safe);
         for (String name : Set.of("write_file", "edit_file", "changes", "run_command")) {
             assertFalse(registry.find(name).orElseThrow().isParallelSafeRead(), name);
         }
@@ -33,7 +33,7 @@ class WorkspaceReadCapabilitiesTest {
 
     @Test void safeReadsRejectAlreadyInterruptedExecutionWithoutClearingTheFlag() throws Exception {
         var registry = WorkspaceTools.create(workspace, request -> true);
-        for (String name : Set.of("list_files", "search_files", "read_file")) {
+        for (String name : Set.of("list_files", "search_files", "read_file", "repository_map")) {
             Tool tool = registry.find(name).orElseThrow();
             try {
                 Thread.currentThread().interrupt();

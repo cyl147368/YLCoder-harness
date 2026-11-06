@@ -22,6 +22,9 @@ public final class TokenizerInputTokenCounter implements InputTokenCounter {
     // 身份键避免重复计算大型不可变内容的哈希；仅保留计数和引用。
     private final IdentityHashMap<ChatMessage, Count> cache = new IdentityHashMap<>();
     private final ArrayDeque<ChatMessage> order = new ArrayDeque<>();
+    private final IdentityHashMap<ToolDefinition, Count> toolCache = new IdentityHashMap<>();
+    private final ArrayDeque<ToolDefinition> toolOrder = new ArrayDeque<>();
+    private int toolCacheChars;
     private int cacheChars;
 
     public TokenizerInputTokenCounter(EncodingType type) {
@@ -32,16 +35,31 @@ public final class TokenizerInputTokenCounter implements InputTokenCounter {
     }
 
     public static boolean supported(String value) {
-        return "utf16".equals(value) || "cl100k".equals(value) || "o200k".equals(value);
+        return "auto".equals(value) || "conservative".equals(value) || "utf16".equals(value)
+                || "cl100k".equals(value) || "o200k".equals(value);
     }
 
     public static InputTokenCounter create(String value) {
-        if (!supported(value)) throw new IllegalArgumentException("token-counter 必须是 utf16、cl100k 或 o200k");
+        if (!supported(value)) throw new IllegalArgumentException("token-counter 必须是 auto、conservative、utf16、cl100k 或 o200k");
         return switch (value) {
             case "cl100k" -> new TokenizerInputTokenCounter(EncodingType.CL100K_BASE);
             case "o200k" -> new TokenizerInputTokenCounter(EncodingType.O200K_BASE);
+            case "auto", "conservative" -> new ConservativeInputTokenCounter();
             default -> InputTokenCounter.UTF16;
         };
+    }
+
+    /** 显式选择不受模型名影响；auto 只对识别到的模型采用对应编码。 */
+    public static InputTokenCounter create(String value, String model) {
+        return create("auto".equals(value) ? selectedEncoding(model) : value);
+    }
+
+    static String selectedEncoding(String model) {
+        String id = ModelContextBudget.canonicalModel(model);
+        if (id.startsWith("gpt-4o") || id.startsWith("gpt-4.1") || id.startsWith("gpt-5")
+                || id.startsWith("gpt-6") || id.matches("o[134](?:-.*)?")) return "o200k";
+        if (id.startsWith("gpt-4") || id.startsWith("gpt-3.5")) return "cl100k";
+        return "conservative";
     }
 
     @Override public synchronized int messageTokens(List<ChatMessage> messages) {
@@ -66,10 +84,26 @@ public final class TokenizerInputTokenCounter implements InputTokenCounter {
         return saturated(total);
     }
 
-    @Override public int toolTokens(List<ToolDefinition> tools) {
+    @Override public synchronized int toolTokens(List<ToolDefinition> tools) {
         if (tools.isEmpty()) return 0;
         long total = 64; // 单独预留工具封装开销，包括 MCP 发现的 schema。
-        for (ToolDefinition tool : tools) total += (long) encoding.countTokensOrdinary(serialize(tool)) + 8;
+        for (ToolDefinition tool : tools) {
+            Count count = toolCache.get(tool);
+            if (count == null) {
+                String serialized = serialize(tool);
+                count = new Count(encoding.countTokensOrdinary(serialized) + 8, serialized.length());
+                if (count.chars <= MAX_CACHE_CHARS) {
+                    while (!toolOrder.isEmpty() && (toolCache.size() >= MAX_CACHE_ENTRIES
+                            || (long) toolCacheChars + count.chars > MAX_CACHE_CHARS)) {
+                        toolCacheChars -= toolCache.remove(toolOrder.removeFirst()).chars;
+                    }
+                    toolCache.put(tool, count);
+                    toolOrder.addLast(tool);
+                    toolCacheChars += count.chars;
+                }
+            }
+            total += count.tokens;
+        }
         return saturated(total);
     }
 

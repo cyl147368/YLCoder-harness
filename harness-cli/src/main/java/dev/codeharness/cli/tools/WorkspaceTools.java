@@ -3,6 +3,7 @@ package dev.codeharness.cli.tools;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.codeharness.core.model.ToolDefinition;
+import dev.codeharness.core.agent.ToolOutputStore;
 import dev.codeharness.core.tool.Tool;
 import dev.codeharness.core.tool.ToolRegistry;
 import java.io.InputStreamReader;
@@ -42,13 +43,15 @@ public final class WorkspaceTools {
     private final Path root;
     private final CommandApproval approval;
     private final Duration commandTimeout;
+    private final ToolOutputStore outputStore;
     private final ChangeTracker changes = new ChangeTracker();
 
-    private WorkspaceTools(Path workspace, CommandApproval approval, Duration commandTimeout) throws Exception {
+    private WorkspaceTools(Path workspace, CommandApproval approval, Duration commandTimeout, ToolOutputStore outputStore) throws Exception {
         Files.createDirectories(workspace);
         this.root = workspace.toRealPath();
         this.approval = Objects.requireNonNull(approval, "approval");
         this.commandTimeout = Objects.requireNonNull(commandTimeout, "commandTimeout");
+        this.outputStore = outputStore;
         if (commandTimeout.isZero() || commandTimeout.isNegative()) throw new IllegalArgumentException("commandTimeout 必须为正数");
     }
 
@@ -68,9 +71,19 @@ public final class WorkspaceTools {
     }
 
     private static ToolRegistry createWithCommandApproval(Path workspace, CommandApproval approval, Duration timeout) throws Exception {
-        WorkspaceTools tools = new WorkspaceTools(workspace, approval, timeout);
+        return createWithCommandApproval(workspace, approval, timeout, null);
+    }
+
+
+    /** 启用完整输出存档的运行时入口；旧重载保留原有输出大小兼容。 */
+    public static ToolRegistry createWithCommandApproval(Path workspace, CommandApproval approval, ToolOutputStore outputStore) throws Exception {
+        return createWithCommandApproval(workspace, approval, Duration.ofMinutes(2), Objects.requireNonNull(outputStore));
+    }
+
+    private static ToolRegistry createWithCommandApproval(Path workspace, CommandApproval approval, Duration timeout, ToolOutputStore outputStore) throws Exception {
+        WorkspaceTools tools = new WorkspaceTools(workspace, approval, timeout, outputStore);
         return new ToolRegistry(List.of(tools.new ListFiles(), tools.new SearchFiles(), tools.new ReadFile(),
-                tools.new WriteFile(), tools.new EditFile(), tools.new Changes(), tools.new RunCommand()));
+                tools.new WriteFile(), tools.new EditFile(), tools.new Changes(), tools.new RunCommand(), new RepositoryMap(tools.root)));
     }
 
     private Path resolve(String relative, boolean allowMissing) throws Exception {
@@ -185,10 +198,14 @@ public final class WorkspaceTools {
 
     private final class ListFiles implements Tool {
         @Override public boolean isParallelSafeRead() { return true; }
-        public ToolDefinition definition() { return WorkspaceTools.this.definition("list_files", "列出项目文件，可选择仅列出某个相对目录下的文件。", Map.of("path", stringProp("相对于工作区的目录"))); }
+        public ToolDefinition definition() { return WorkspaceTools.this.definition("list_files", "列出项目文件，可选择仅列出某个相对目录下的文件。", Map.of("path", stringProp("相对于工作区的目录"), "offset", Map.of("type", "integer", "minimum", 0), "limit", Map.of("type", "integer", "minimum", 1, "maximum", 100))); }
         public String execute(String input) throws Exception {
             checkReadInterrupted();
-            Path dir = resolve(str(args(input), "path", "."), false);
+            JsonNode node = args(input);
+            int offset = lineNumber(node, "offset", 0), limit = lineNumber(node, "limit", RESULT_LIMIT);
+            if (offset < 0 || offset > 1_000_000 || limit < 1 || limit > RESULT_LIMIT) throw new IllegalArgumentException("文件列表分页参数超限");
+            boolean[] more = {false};
+            Path dir = resolve(str(node, "path", "."), false);
             if (!Files.isDirectory(dir)) throw new IllegalArgumentException("路径不是目录");
             BoundedOutput output = new BoundedOutput();
             Files.walkFileTree(dir, Set.of(), 5, new SimpleFileVisitor<>() {
@@ -203,23 +220,29 @@ public final class WorkspaceTools {
                     return safeTraversal(path) ? add(path, attributes.isDirectory()) : FileVisitResult.CONTINUE;
                 }
                 private FileVisitResult add(Path path, boolean directory) {
+                    if (count++ < offset) return FileVisitResult.CONTINUE;
+                    if (count > offset + limit) { more[0] = true; return FileVisitResult.TERMINATE; }
                     output.append(display(path) + (directory ? "/" : "") + "\n");
-                    return ++count >= RESULT_LIMIT || output.truncated() ? FileVisitResult.TERMINATE : FileVisitResult.CONTINUE;
+                    return output.truncated() ? FileVisitResult.TERMINATE : FileVisitResult.CONTINUE;
                 }
                 @Override public FileVisitResult visitFileFailed(Path file, IOException error) throws IOException { checkReadInterrupted(); return FileVisitResult.CONTINUE; }
             });
-            return output.text();
+            if (more[0]) output.append("[本页达到 " + limit + " 项，下一页 offset=" + (offset + limit) + "]\n");
+            return preview("list_files", output);
         }
     }
 
     private final class SearchFiles implements Tool {
         @Override public boolean isParallelSafeRead() { return true; }
-        public ToolDefinition definition() { return WorkspaceTools.this.definition("search_files", "在文本文件中搜索字面文本，并返回匹配的文件行。", Map.of("query", stringProp("要查找的字面文本"), "path", stringProp("可选的工作区相对目录")), "query"); }
+        public ToolDefinition definition() { return WorkspaceTools.this.definition("search_files", "在文本文件中搜索字面文本，并返回匹配的文件行。", Map.of("query", stringProp("要查找的字面文本"), "path", stringProp("可选的工作区相对目录"), "offset", Map.of("type", "integer", "minimum", 0), "limit", Map.of("type", "integer", "minimum", 1, "maximum", 100)), "query"); }
         public String execute(String input) throws Exception {
             checkReadInterrupted();
             JsonNode node = args(input);
             String query = required(node, "query");
             if (query.isEmpty()) throw new IllegalArgumentException("query 不能为空");
+            int offset = lineNumber(node, "offset", 0), limit = lineNumber(node, "limit", RESULT_LIMIT);
+            if (offset < 0 || offset > 1_000_000 || limit < 1 || limit > RESULT_LIMIT) throw new IllegalArgumentException("搜索分页参数超限");
+            boolean[] more = {false};
             Path dir = resolve(str(node, "path", "."), false);
             BoundedOutput output = new BoundedOutput();
             Files.walkFileTree(dir, Set.of(), 8, new SimpleFileVisitor<>() {
@@ -240,14 +263,17 @@ public final class WorkspaceTools {
                     for (int i = 0; i < lines.size(); i++) {
                         checkReadInterrupted();
                         if (!lines.get(i).contains(query)) continue;
+                        if (matches++ < offset) continue;
+                        if (matches > offset + limit) { more[0] = true; return FileVisitResult.TERMINATE; }
                         output.append(display(file) + ":" + (i + 1) + ": " + lines.get(i) + "\n");
-                        if (++matches >= RESULT_LIMIT || output.truncated()) return FileVisitResult.TERMINATE;
+                        if (output.truncated()) return FileVisitResult.TERMINATE;
                     }
                     return FileVisitResult.CONTINUE;
                 }
                 @Override public FileVisitResult visitFileFailed(Path file, IOException error) throws IOException { checkReadInterrupted(); return FileVisitResult.CONTINUE; }
             });
-            return output.text();
+            if (more[0]) output.append("[本页达到 " + limit + " 条，下一页 offset=" + (offset + limit) + "]\n");
+            return preview("search_files", output);
         }
     }
 
@@ -270,7 +296,7 @@ public final class WorkspaceTools {
                 output.append(i + ": " + lines.get(i - 1) + "\n");
                 if (output.truncated()) break;
             }
-            return output.text();
+            return preview("workspace_query", output);
         }
     }
 
@@ -456,8 +482,18 @@ public final class WorkspaceTools {
                 drain.interrupt();
             }
             String status = finished ? "退出码：" + process.exitValue() : "命令超时，已等待 " + commandTimeout.toMillis() + " ms";
-            return status + "\n" + output.text();
+            return preview("run_command", output, status + "\n");
         }
+    }
+
+    private String preview(String operation, BoundedOutput output) throws Exception {
+        return preview(operation, output, "");
+    }
+
+    private String preview(String operation, BoundedOutput output, String prefix) throws Exception {
+        if (outputStore == null) return prefix + output.text();
+        if (output.truncated()) throw new IOException("工具完整输出超过 4,000,000 字符工具收集上限，请缩小查询范围或分页读取");
+        return outputStore.store(operation, prefix + output.text(), OUTPUT_LIMIT);
     }
 
     private boolean safeTraversal(Path path) throws IOException {
@@ -468,12 +504,12 @@ public final class WorkspaceTools {
 
     private String display(Path path) { return root.relativize(path).toString().replace('\\', '/'); }
 
-    private static final class BoundedOutput {
+    private final class BoundedOutput {
         private final StringBuilder content = new StringBuilder();
         private boolean truncated;
 
         synchronized void append(String value) {
-            int remaining = OUTPUT_LIMIT - content.length();
+            int remaining = (outputStore == null ? OUTPUT_LIMIT : 4_000_000) - content.length();
             int take = Math.min(remaining, value.length());
             content.append(value, 0, take);
             if (take < value.length()) truncated = true;

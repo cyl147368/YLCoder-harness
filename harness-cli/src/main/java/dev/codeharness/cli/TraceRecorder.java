@@ -52,6 +52,11 @@ final class TraceRecorder {
         if (capture != null) capture.iteration.set(iteration);
     }
 
+    void context(dev.codeharness.core.agent.ContextMetrics metrics) {
+        Capture capture = active.get();
+        if (capture != null) capture.log.context(metrics);
+    }
+
     void toolStart(int iteration, ToolCall call) {
         Capture capture = active.get();
         if (capture != null) capture.log.toolStart(iteration, call);

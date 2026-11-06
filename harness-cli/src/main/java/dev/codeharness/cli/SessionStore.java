@@ -6,6 +6,8 @@ import com.fasterxml.jackson.core.StreamReadFeature;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.codeharness.core.agent.ToolHistory;
+import dev.codeharness.core.agent.ContextSnapshot;
+import dev.codeharness.core.agent.ContextManager;
 import dev.codeharness.core.model.ChatMessage;
 import java.io.IOException;
 import java.io.InputStream;
@@ -84,7 +86,7 @@ public final class SessionStore {
     }
 
     public record Session(int version, String id, String workspace, String provider, String model,
-                          String status, String updatedAt, List<ChatMessage> transcript, List<RewindSnapshot> rewinds) {
+                          String status, String updatedAt, List<ChatMessage> transcript, List<RewindSnapshot> rewinds, ContextSnapshot context) {
         public Session {
             transcript = List.copyOf(transcript);
             rewinds = rewinds == null ? List.of() : List.copyOf(rewinds);
@@ -92,9 +94,14 @@ public final class SessionStore {
         /** 兼容没有回退快照的旧检查点与调用方。 */
         public Session(int version, String id, String workspace, String provider, String model,
                        String status, String updatedAt, List<ChatMessage> transcript) {
-            this(version, id, workspace, provider, model, status, updatedAt, transcript, List.of());
+            this(version, id, workspace, provider, model, status, updatedAt, transcript, List.of(), null);
+        }
+        public Session(int version, String id, String workspace, String provider, String model,
+                       String status, String updatedAt, List<ChatMessage> transcript, List<RewindSnapshot> rewinds) {
+            this(version, id, workspace, provider, model, status, updatedAt, transcript, rewinds, null);
         }
     }
+
 
     public String newId() { return UUID.randomUUID().toString(); }
 
@@ -178,16 +185,41 @@ public final class SessionStore {
 
     private void saveWithHistoryLocked(String id, Session value, boolean archivePrevious) throws IOException {
         List<RewindSnapshot> rewinds = new ArrayList<>();
+        ContextSnapshot context = null;
         if (Files.exists(path(id, ".json"), LinkOption.NOFOLLOW_LINKS)) {
             Session previous = load(id);
             rewinds.addAll(previous.rewinds());
+            // 回退使投影边界失效；普通追加保留已验证的摘要状态。
+            if (!archivePrevious) context = validContext(previous.context(), value.transcript()) ? previous.context() : null;
             if (archivePrevious && !previous.transcript().equals(value.transcript()))
                 rewinds.add(new RewindSnapshot(Instant.now().toString(), previous.transcript()));
         }
         Session updated = new Session(value.version(), value.id(), value.workspace(), value.provider(), value.model(),
-                value.status(), value.updatedAt(), value.transcript(), rewinds);
+                value.status(), value.updatedAt(), value.transcript(), rewinds, context);
         validate(updated, id);
         saveLocked(id, updated);
+    }
+
+    /** 摘要与当前完整历史一起原子保存，不另建会话。 */
+    public void saveContext(String id, ContextSnapshot context) throws IOException {
+        OwnedLease owned = leases.get(id);
+        if (owned != null && owned.lease.lock().isValid()) {
+            if (owned.owner != Thread.currentThread()) throw new IOException("会话已被另一线程使用");
+            saveContextLocked(id, context);
+        } else {
+            try (Lease ignored = lock(id)) { saveContextLocked(id, context); }
+        }
+    }
+    private void saveContextLocked(String id, ContextSnapshot context) throws IOException {
+        Session value = load(id);
+        if (context != null && !validContext(context, value.transcript())) throw new IOException("摘要边界与会话原文不一致");
+        if (java.util.Objects.equals(value.context(), context)) return;
+        saveLocked(id, new Session(value.version(), value.id(), value.workspace(), value.provider(), value.model(),
+                value.status(), value.updatedAt(), value.transcript(), value.rewinds(), context));
+    }
+    private static boolean validContext(ContextSnapshot context, List<ChatMessage> transcript) {
+        return context != null && ContextManager.isSummaryBoundaryAllowed(transcript, context.boundary())
+                && context.prefixFingerprint().equals(ContextManager.fingerprint(transcript.subList(0, context.boundary())));
     }
 
     private void saveLocked(String id, Session value) throws IOException {

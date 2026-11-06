@@ -135,28 +135,34 @@ class ExecutionTraceCliTest {
     }
 
     @Test void compactedRequestsAreRecordedWhileCheckpointKeepsFullHistory() throws Exception {
-        configure("chat", "agent:\n  context-budget-tokens: 6000\n");
+        configure("chat", "agent:\n  context-budget-tokens: 6000\n  token-counter: utf16\n  context-summarizer:\n    model: trace-summary\n");
         var history = new ArrayList<ChatMessage>();
         history.add(ChatMessage.system("旧系统提示会被刷新"));
         history.add(ChatMessage.user("需要始终保留的原始任务"));
         for (int i = 0; i < 15; i++) {
-            history.add(ChatMessage.user("历史问题标记" + i + "u".repeat(1200)));
-            history.add(ChatMessage.assistant("历史回复标记" + i + "a".repeat(1200)));
+            history.add(ChatMessage.user("历史问题标记" + i));
+            history.add(ChatMessage.assistant("历史回复标记" + i + "a".repeat(2400)));
         }
         SessionStore store = new SessionStore(workspace);
         store.save("compact-session", "openai-compatible", "trace-main", "COMPLETED", history);
-        replies = (request, index) -> answer(ANSWER);
+        String summary = JSON.writeValueAsString(Map.of("goals", List.of("保留原始任务"), "constraints", List.of("用户原文完整保留"),
+                "decisions", List.of(), "completed", List.of("旧轮次已完成"), "pending", List.of("继续任务"),
+                "failures", List.of(), "references", List.of()));
+        replies = (request, index) -> answer(request.path("model").asText().equals("trace-summary") ? summary : ANSWER);
         Result run = runJson(false, "resume", "compact-session", "继续压缩后的任务");
         assertEquals(0, run.code, run.err);
-        JsonNode messages = requests.getFirst().path("messages");
+        JsonNode mainRequest = requests.stream().filter(r -> r.path("model").asText().equals("trace-main")).findFirst().orElseThrow();
+        JsonNode messages = mainRequest.path("messages");
         assertTrue(messages.size() < history.size());
-        assertFalse(messages.toString().contains("历史问题标记0"));
+        assertTrue(messages.toString().contains("历史问题标记0"), "用户要求原文不能在压缩中删除");
+        assertFalse(messages.toString().contains("历史回复标记0"));
         String log = Files.readString(Path.of(JSON.readTree(run.out).path("traceFile").asText()));
-        assertFalse(log.contains("历史问题标记0"), "记录应来自实际压缩请求，不能错误复制完整检查点");
+        assertTrue(log.contains("summarizer"), "摘要请求必须独立记录来源");
         for (JsonNode message : messages) {
             if (message.path("content").isTextual()) assertTrue(log.contains(message.path("content").asText().split("\n", 2)[0]), log);
         }
-        assertTrue(store.load("compact-session").transcript().stream().anyMatch(m -> m.content().contains("历史问题标记0")));
+        assertTrue(store.load("compact-session").transcript().stream().anyMatch(m -> m.content().contains("历史回复标记0")));
+        assertNotNull(store.load("compact-session").context(), "结构化摘要应与完整历史同时持久化");
     }
 
     @Test void resumeAndRewindKeepLogsInSameSessionAndLocalCommandsMakeNoRequests() throws Exception {

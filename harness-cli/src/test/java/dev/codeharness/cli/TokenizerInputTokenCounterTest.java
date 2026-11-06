@@ -95,6 +95,32 @@ class TokenizerInputTokenCounterTest {
         assertEquals(first, counter.messageTokens(List.of(ChatMessage.user(original.content()))));
     }
 
+    @Test void 自动模式对未知模型计入中文和不透明元数据并保持缓存一致() {
+        List<ChatMessage> messages = List.of(ChatMessage.user("中文诊断😀".repeat(120)));
+        InputTokenCounter fallback = TokenizerInputTokenCounter.create("auto", "custom");
+        assertTrue(fallback.messageTokens(messages) > InputTokenCounter.UTF16.messageTokens(messages) * 3);
+        assertEquals(fallback.messageTokens(messages), fallback.messageTokens(messages));
+        assertEquals(0, fallback.toolTokens(List.of()));
+        ToolDefinition schema = new ToolDefinition("test", "中文说明".repeat(50), Map.of("type", "object"));
+        int schemaTokens = fallback.toolTokens(List.of(schema));
+        assertEquals(schemaTokens, fallback.toolTokens(List.of(schema)));
+        assertTrue(schemaTokens > 500);
+        List<ChatMessage> withMetadata = List.of(ChatMessage.assistant("ok", Map.of("opaque", "签名".repeat(200))));
+        assertTrue(fallback.messageTokens(withMetadata) > fallback.messageTokens(List.of(ChatMessage.assistant("ok"))) + 1000);
+        assertEquals(TokenizerInputTokenCounter.create("o200k").messageTokens(messages),
+                TokenizerInputTokenCounter.create("auto", "gpt-4.1-mini").messageTokens(messages));
+    }
+
+    @Test void 分词工具结构缓存淘汰不会改变估计值() {
+        InputTokenCounter counter = TokenizerInputTokenCounter.create("o200k");
+        ToolDefinition original = new ToolDefinition("first", "中文工具", Map.of("type", "object"));
+        int first = counter.toolTokens(List.of(original));
+        for (int index = 0; index < 300; index++)
+            counter.toolTokens(List.of(new ToolDefinition("tool" + index, "说明" + index, Map.of("type", "object"))));
+        assertEquals(first, counter.toolTokens(List.of(original)));
+        assertEquals(first, counter.toolTokens(List.of(new ToolDefinition("first", "中文工具", Map.of("type", "object")))));
+    }
+
     @Test void invalidCounterValuesAreRejectedWithoutEchoingValues() {
         for (String name : new String[] {null, "unknown-secret", "CL100K"}) {
             IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> TokenizerInputTokenCounter.create(name));

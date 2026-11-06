@@ -104,7 +104,7 @@ final class TraceFile implements AutoCloseable {
         if (!fileIdentity.equals(identity(file, false))) throw new IOException("日志文件已被替换");
     }
 
-    private static void ensureDirectory(Path path, boolean privateExisting) throws IOException {
+    static void ensureDirectory(Path path, boolean privateExisting) throws IOException {
         verifyDirectory(path.getParent());
         boolean created = false;
         try {
@@ -115,14 +115,14 @@ final class TraceFile implements AutoCloseable {
         if (created || privateExisting) restrict(path, true);
     }
 
-    private static void verifyDirectory(Path path) throws IOException {
+    static void verifyDirectory(Path path) throws IOException {
         BasicFileAttributes attributes = Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
         if (!attributes.isDirectory() || attributes.isSymbolicLink() || !path.toRealPath().equals(path))
             throw new IOException("日志目录不能被重定向");
         identity(path, true);
     }
 
-    private static void ensureIgnoreFile(Path directory) throws IOException {
+    static void ensureIgnoreFile(Path directory) throws IOException {
         Path ignore = directory.resolve(".gitignore");
         try (FileChannel out = FileChannel.open(ignore, Set.of(StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE,
                 LinkOption.NOFOLLOW_LINKS), attributes(directory, false))) {
@@ -145,7 +145,7 @@ final class TraceFile implements AutoCloseable {
         }
     }
 
-    private static FileAttribute<?>[] attributes(Path directory, boolean isDirectory) throws IOException {
+    static FileAttribute<?>[] attributes(Path directory, boolean isDirectory) throws IOException {
         if (Files.getFileStore(directory).supportsFileAttributeView("posix")) {
             return new FileAttribute<?>[]{PosixFilePermissions.asFileAttribute(
                     PosixFilePermissions.fromString(isDirectory ? "rwx------" : "rw-------"))};
@@ -165,7 +165,7 @@ final class TraceFile implements AutoCloseable {
         throw new IOException("文件系统不支持私有日志权限");
     }
 
-    private static void restrict(Path path, boolean directory) throws IOException {
+    static void restrict(Path path, boolean directory) throws IOException {
         if (Files.getFileStore(path).supportsFileAttributeView("posix")) {
             Files.setPosixFilePermissions(path, PosixFilePermissions.fromString(directory ? "rwx------" : "rw-------"));
             return;
@@ -178,7 +178,7 @@ final class TraceFile implements AutoCloseable {
         acl.setAcl(List.of(builder.build()));
     }
 
-    private static Object identity(Path path, boolean directory) throws IOException {
+    static Object identity(Path path, boolean directory) throws IOException {
         BasicFileAttributes attributes = Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
         if (attributes.isSymbolicLink() || (directory ? !attributes.isDirectory() : !attributes.isRegularFile())
                 || !path.toRealPath().equals(path)) throw new IOException("日志路径不能被重定向");

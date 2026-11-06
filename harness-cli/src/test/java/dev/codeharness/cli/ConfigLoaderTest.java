@@ -80,7 +80,7 @@ class ConfigLoaderTest {
 
     @Test void validatesTokenizerSelectionWithoutEchoingInvalidValues() throws Exception {
         Path config = temporary.resolve("counter.yaml");
-        for (String name : new String[] {"utf16", "cl100k", "o200k"}) {
+        for (String name : new String[] {"auto", "conservative", "utf16", "cl100k", "o200k"}) {
             Files.writeString(config, "agent:\n  token-counter: " + name + "\n");
             assertEquals(name, ConfigLoader.load(temporary, config).agent.tokenCounter);
         }

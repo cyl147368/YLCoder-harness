@@ -1,0 +1,54 @@
+{
+  "sha256": "7d4e6c9863386f14b40a28317acece43ba7d936239f670f4e445912cdada52b3",
+  "requests": 5,
+  "toolsByTask": [
+    [],
+    [
+      "list_files",
+      "search_files",
+      "read_file",
+      "changes",
+      "repository_map",
+      "read_tool_output",
+      "search_history"
+    ],
+    [
+      "list_files",
+      "search_files",
+      "read_file",
+      "changes",
+      "repository_map",
+      "read_tool_output",
+      "search_history"
+    ],
+    [
+      "list_files",
+      "search_files",
+      "read_file",
+      "write_file",
+      "edit_file",
+      "changes",
+      "run_command",
+      "repository_map",
+      "read_tool_output",
+      "search_history"
+    ],
+    [
+      "list_files",
+      "search_files",
+      "read_file",
+      "changes",
+      "repository_map",
+      "read_tool_output",
+      "search_history"
+    ]
+  ],
+  "schemaUtf8Bytes": [
+    2,
+    2867,
+    2867,
+    4388,
+    2867
+  ],
+  "note": "结构字节数不是厂商计费 token；分类额外请求为零"
+}

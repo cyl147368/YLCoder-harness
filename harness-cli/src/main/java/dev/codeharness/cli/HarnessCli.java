@@ -571,9 +571,10 @@ public final class HarnessCli implements Callable<Integer> {
         }
         if (contextBudget != null) config.agent.contextBudgetTokens = contextBudget;
         if (tokenCounter != null) config.agent.tokenCounter = tokenCounter;
-        InputTokenCounter inputCounter = TokenizerInputTokenCounter.create(config.agent.tokenCounter);
+        InputTokenCounter inputCounter = TokenizerInputTokenCounter.create(config.agent.tokenCounter, config.model);
+        var contextResolution = ModelContextBudget.resolve(config.agent, config.model);
         AgentRunOptions options = new AgentRunOptions(systemPrompt(), Integer.MAX_VALUE,
-                config.agent.contextBudgetTokens, config.agent.maxOutputTokens,
+                contextResolution.inputBudgetTokens(), config.agent.maxOutputTokens,
                 config.agent.maxToolOutputChars, this::cancelled, config.agent.parallelReads);
         Map<String, String> headers = new LinkedHashMap<>();
         for (var header : config.headerEnv.entrySet()) {
@@ -650,6 +651,25 @@ public final class HarnessCli implements Callable<Integer> {
                 throw new IllegalStateException("重试状态无效");
             }
         };
+        ContextSummarizer summarizer = config.agent.contextSemantic ? new ModelContextSummarizer(new ChatModel() {
+            private volatile ChatModel delegate;
+            @Override public ChatResponse complete(ChatRequest request) {
+                ChatModel selected = delegate;
+                if (selected == null) {
+                    ProviderConfig summaryConfig = ContextProviderResolver.resolve(config, providerConfig, System::getenv);
+                    trace.addSecrets(connectionSecrets(summaryConfig));
+                    selected = usageDashboard.track(trace.wrap(new ProviderRegistry().create(summaryConfig), "summarizer",
+                            summaryConfig.providerId(), summaryConfig.model()));
+                    delegate = selected;
+                }
+                return selected.complete(request);
+            }
+        }, TokenizerInputTokenCounter.create(config.agent.tokenCounter,
+                config.agent.contextSummarizer.model == null ? config.model : config.agent.contextSummarizer.model),
+                ContextProviderResolver.sourceBudget(config, config.agent.contextSummarizer.model == null ? config.model : config.agent.contextSummarizer.model),
+                traceSecrets(config, providerConfig)) : null;
+        ContextPolicy contextPolicy = new ContextPolicy(config.agent.contextSemantic, config.agent.contextTriggerRatio,
+                config.agent.contextTargetRatio, config.agent.contextRecentTurns, config.agent.contextSummaryMaxTokens);
         CommandReview reviewer = null;
         if (!commandMode(config).equals("allow-all")) {
             // 延迟创建审核适配器，审核厂商不可用时仍能使用本地快速路径。
@@ -672,14 +692,20 @@ public final class HarnessCli implements Callable<Integer> {
                     notice -> { if (!quiet && !json) ui().review(notice); }, usageDashboard::record);
         }
         CommandReview commandReviewer = reviewer;
-        var registry = WorkspaceTools.createWithCommandApproval(root, request -> approve(request, config, commandReviewer));
+        var archive = new dev.codeharness.cli.trace.ToolOutputArchive(root, traceSecrets(config, providerConfig));
+        var historySearch = new dev.codeharness.cli.tools.HistorySearch(traceSecrets(config, providerConfig));
+        var registry = WorkspaceTools.createWithCommandApproval(root, request -> approve(request, config, commandReviewer), archive);
+        var workspaceRegistry = registry;
+        var contextTools = new ArrayList<dev.codeharness.core.tool.Tool>(workspaceRegistry.definitions().stream().map(def -> workspaceRegistry.find(def.name()).orElseThrow()).toList());
+        contextTools.add(archive.readerTool()); contextTools.add(historySearch);
+        registry = new dev.codeharness.core.tool.ToolRegistry(contextTools);
         WebTools web = !noWeb && config.web.enabled ? new WebTools(config.web) : null;
         McpTools mcp = null;
         try {
             if (web != null) registry = web.combine(registry);
-            mcp = McpTools.open(root, config.mcp, config.agent.maxToolOutputChars, request -> approveMcp(request, config));
+            mcp = McpTools.open(root, config.mcp, 4_000_000, request -> approveMcp(request, config));
             return new Runtime(config, providerConfig, root, store, new CodeAgent(chatModel, mcp.combine(registry),
-                    new ContextCompactor(inputCounter)), options, saved, mcp, reviewer, web, trace);
+                    new ContextCompactor(inputCounter), contextPolicy, summarizer, archive), options, saved, mcp, reviewer, web, trace, historySearch);
         } catch (Exception failure) {
             if (mcp != null) mcp.close();
             if (web != null) web.close();
@@ -801,7 +827,7 @@ public final class HarnessCli implements Callable<Integer> {
         history = new ArrayList<>(history);
         lastIntent = TaskIntent.resolve(history, TaskIntent.parse(intentMode));
         var taskAgent = runtime.agent.withTools(tool -> lastIntent.allows(tool.definition().name()));
-        String prompt = systemPrompt() + lastIntent.guidance();
+        String prompt = systemPrompt() + "\n先用 repository_map 定位相关源码，再分段读取。需要旧约束时用 search_history；大工具结果用 read_tool_output 分页找回，不重跑原工具。\n" + lastIntent.guidance();
         if (!history.isEmpty() && history.getFirst().role() == ChatMessage.Role.SYSTEM) history.set(0, ChatMessage.system(prompt));
         else history.addFirst(ChatMessage.system(prompt));
         if (!quiet && !json) out().println("  意图：" + lastIntent.id() + " · " + lastIntent.reason());
@@ -816,10 +842,24 @@ public final class HarnessCli implements Callable<Integer> {
         try {
             if (interactiveMode) input().startTaskInput();
             result = taskAgent.resume(history, runtime.options, new AgentListener() {
+            private boolean contextRestored;
             private void live(int iteration, String phase) {
                 if (interactiveMode) ui().live(usageDashboard.task(), usageDashboard.process(),
                         runtime.reviewer == null ? new CommandReview.Stats(0, 0, 0, 0, TokenUsage.ZERO, 0) : runtime.reviewer.stats(),
                         iteration, taskToolCount.get(), phase);
+            }
+            @Override public void onContextCheckpoint(ContextSnapshot snapshot) {
+                if (cancelled()) return;
+                try { runtime.store.saveContext(id, snapshot); }
+                catch (java.io.IOException failure) { throw new UncheckedIOException("无法保存上下文摘要", failure); }
+            }
+            @Override public void onContext(ContextMetrics metrics) {
+                runtime.trace.context(metrics);
+                if (!quiet && !json && (metrics.summarizedMessages() > 0 || metrics.degraded())) {
+                    ui().beforeOutput();
+                    out().printf("  上下文：%,d → %,d token · %s%n", metrics.beforeTokens(), metrics.afterTokens(), metrics.reason());
+                    out().flush();
+                }
             }
             @Override public void onModelRequest(int iteration, ChatRequest request) {
                 runtime.trace.iteration(iteration);
@@ -852,9 +892,13 @@ public final class HarnessCli implements Callable<Integer> {
                 live(iteration, error ? "处理工具错误" : "执行中");
             }
             @Override public void onCheckpoint(List<ChatMessage> transcript) {
+                runtime.historySearch.update(transcript);
                 if (runtime.reviewer != null) runtime.reviewer.context(transcript);
                 if (cancelled()) return;
-                try { runtime.store.save(id, runtime.config.provider, runtime.config.model, "RUNNING", transcript); }
+                try {
+                    runtime.store.save(id, runtime.config.provider, runtime.config.model, "RUNNING", transcript);
+                    if (!contextRestored) { runtime.agent.restoreContext(runtime.store.load(id).context()); contextRestored = true; }
+                }
                 catch (java.io.IOException failure) { throw new UncheckedIOException("无法保存会话检查点", failure); }
             }
         });
@@ -950,6 +994,9 @@ public final class HarnessCli implements Callable<Integer> {
     private static List<String> traceSecrets(HarnessConfig config, ProviderConfig main) {
         var values = new ArrayList<>(connectionSecrets(main));
         if (config.apiKey != null) values.add(config.apiKey);
+        if (config.agent.contextSummarizer.apiKey != null) values.add(config.agent.contextSummarizer.apiKey);
+        try { values.addAll(connectionSecrets(ContextProviderResolver.resolve(config, main, System::getenv))); }
+        catch (RuntimeException ignored) { /* 摘要连接延迟校验，禁用时不影响主任务。 */ }
         if (config.permissions.reviewer.apiKey != null) values.add(config.permissions.reviewer.apiKey);
         try { values.addAll(connectionSecrets(ReviewProviderResolver.resolve(config, main, System::getenv))); }
         catch (RuntimeException ignored) { /* 无效审核连接仍延迟到真正需要审核时处理。 */ }
@@ -972,7 +1019,7 @@ public final class HarnessCli implements Callable<Integer> {
         };
     }
     private record Runtime(HarnessConfig config, ProviderConfig providerConfig, Path workspace, SessionStore store, CodeAgent agent,
-                           AgentRunOptions options, SessionStore.Session saved, McpTools mcp, CommandReview reviewer, WebTools web, TraceRecorder trace) implements AutoCloseable {
+                           AgentRunOptions options, SessionStore.Session saved, McpTools mcp, CommandReview reviewer, WebTools web, TraceRecorder trace, dev.codeharness.cli.tools.HistorySearch historySearch) implements AutoCloseable {
         @Override public void close() {
             try { mcp.close(); }
             finally {

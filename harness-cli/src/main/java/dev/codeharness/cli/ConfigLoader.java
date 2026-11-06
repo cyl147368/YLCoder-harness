@@ -46,8 +46,18 @@ public final class ConfigLoader {
         try { ApiFormat.validate(config.apiFormat); ReviewProviderResolver.validate(config); }
         catch (IllegalArgumentException invalid) { throw new IOException(invalid.getMessage()); }
         if (!TokenizerInputTokenCounter.supported(config.agent.tokenCounter)) {
-            throw new IOException("agent.token-counter 必须是 utf16、cl100k 或 o200k");
+            throw new IOException("agent.token-counter 必须是 auto、conservative、utf16、cl100k 或 o200k");
         }
+        try { ModelContextBudget.validate(config.agent); ModelContextBudget.resolve(config.agent, config.model); }
+        catch (IllegalArgumentException invalid) { throw new IOException(invalid.getMessage()); }
+        if (!Double.isFinite(config.agent.contextTriggerRatio) || !Double.isFinite(config.agent.contextTargetRatio)
+                || config.agent.contextTriggerRatio <= 0 || config.agent.contextTriggerRatio > 1
+                || config.agent.contextTargetRatio <= 0 || config.agent.contextTargetRatio >= config.agent.contextTriggerRatio
+                || config.agent.contextRecentTurns < 1 || config.agent.contextRecentTurns > 32
+                || config.agent.contextSummaryMaxTokens < 64 || config.agent.contextSummaryMaxTokens > 16000) {
+            throw new IOException("上下文压缩配置无效：0 < target < trigger <= 1，recent-turns 1..32，summary-max-tokens 64..16000");
+        }
+        validateSummarizer(config.agent.contextSummarizer);
         if (config.agent.parallelReads < 1 || config.agent.parallelReads > 8) {
             throw new IOException("agent.parallel-reads 必须在 1 到 8 之间");
         }
@@ -71,6 +81,16 @@ public final class ConfigLoader {
         validateMcp(config.mcp);
         dev.codeharness.cli.web.WebTools.validate(config.web);
         return config;
+    }
+
+    private static void validateSummarizer(HarnessConfig.Reviewer summarizer) throws IOException {
+        if (summarizer == null) throw new IOException("agent.context-summarizer 不能为 null");
+        HarnessConfig isolated = new HarnessConfig();
+        isolated.permissions.reviewer = summarizer;
+        try { ReviewProviderResolver.validate(isolated); }
+        catch (IllegalArgumentException invalid) {
+            throw new IOException(invalid.getMessage().replace("permissions.reviewer", "agent.context-summarizer"));
+        }
     }
 
     private static void validateMcp(HarnessConfig.Mcp mcp) throws IOException {

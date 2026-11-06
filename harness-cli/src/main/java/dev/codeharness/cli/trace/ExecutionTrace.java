@@ -89,7 +89,7 @@ public final class ExecutionTrace implements AutoCloseable {
         if (disabled || closed) return id;
         try {
             if (!ensureOpen()) return id;
-            String role = "reviewer".equals(source) ? "reviewer" : "agent";
+            String role = "reviewer".equals(source) ? "reviewer" : "summarizer".equals(source) ? "summarizer" : "agent";
             if (requestSources.size() >= MAX_REFERENCES) throw new LimitReached();
             requestSources.put(id, role);
             StringBuilder event = new StringBuilder();
@@ -171,6 +171,23 @@ public final class ExecutionTrace implements AutoCloseable {
             append(event.toString());
         } catch (LimitReached limit) { stop(true); }
         catch (Exception ignored) { stop(false); }
+    }
+
+    /** 与真实模型请求一同记录请求投影效果；不包含历史正文。 */
+    public synchronized void context(dev.codeharness.core.agent.ContextMetrics metrics) {
+        if (disabled || closed) return;
+        try {
+            if (!ensureOpen()) return;
+            String event = "\n## 上下文整理\n\n"
+                    + "- 本地估算 token：整理前 " + metrics.beforeTokens() + "；整理后 " + metrics.afterTokens()
+                    + "；消息预算 " + metrics.budgetTokens() + "。\n"
+                    + "- 摘要覆盖消息：" + metrics.summarizedMessages() + "；复用：" + metrics.reused()
+                    + "；降级：" + metrics.degraded() + "；耗时：" + metrics.elapsedMillis() + " ms。\n"
+                    + "- 原因：" + redactor.text(metrics.reason()) + "。\n"
+                    + "- 输入预算已经扣除工具结构；本地估算不等同于厂商计费用量。\n\n";
+            append(event);
+        } catch (LimitReached limit) { stop(true); }
+        catch (Exception failure) { stop(false); }
     }
 
     public synchronized void toolStart(int iteration, ToolCall call) {

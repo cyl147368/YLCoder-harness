@@ -9,6 +9,9 @@ import java.util.List;
 /** 可选的进度与指标观察者；循环忽略监听器失败。 */
 public interface AgentListener {
     AgentListener NOOP = new AgentListener() {};
+    default void onContext(ContextMetrics metrics) {}
+    /** 与会话历史分开保存；保存失败阻止后续请求。 */
+    default void onContextCheckpoint(ContextSnapshot snapshot) {}
     default void onModelRequest(int iteration, ChatRequest request) {}
     default void onModelResponse(int iteration, ChatResponse response) {}
     default void onToolStart(int iteration, ToolCall call) {}
