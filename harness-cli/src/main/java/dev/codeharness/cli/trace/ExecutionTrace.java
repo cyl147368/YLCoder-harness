@@ -157,8 +157,74 @@ public final class ExecutionTrace implements AutoCloseable {
 
     public synchronized void wireResponse(long requestId, int attempt, int status, String contentType,
                                            String value, boolean truncated, String state) {
-        wire(requestId, attempt, "HTTP 响应报文", "HTTP " + (status == 0 ? "未收到响应头" : status)
-                + " · " + contentType + " · " + state, value, truncated);
+        if (disabled || closed) return;
+        try {
+            if (!ensureOpen()) return;
+            StringBuilder event = responseHeader(requestId, "HTTP 响应状态", -1);
+            field(event, "HTTP 尝试", Integer.toString(attempt));
+            field(event, "传输信息", "HTTP " + (status == 0 ? "未收到响应头" : status));
+            field(event, "响应类型", contentType);
+            field(event, "读取状态", state);
+            if (truncated) event.append("**报文已截断：响应捕获达到上限，不能保证错误详情完整。**\n\n");
+            appendResponseError(event, value, status);
+            event.append("\n回答正文、工具调用及用量见同编号的“模型回复”；中断时查看“未完成回复片段”和“模型请求失败”。\n\n");
+            append(event.toString());
+        } catch (LimitReached limit) { stop(true); }
+        catch (Exception failure) { stop(false); }
+    }
+
+    /** 只摘取结构化错误字段；正常响应直接使用适配器的解析结果，不再保存 JSON/SSE 原文。 */
+    private void appendResponseError(StringBuilder event, String raw, int status) {
+        if (raw == null || raw.isBlank()) return;
+        try {
+            JsonNode value = redactor.json(raw);
+            appendErrorFields(event, value, status);
+        } catch (Exception notJson) {
+            // SSE 允许一个事件包含多行 data，只处理错误事件，不回显 delta 或原始事件行。
+            StringBuilder data = new StringBuilder();
+            for (String line : raw.replace("\r\n", "\n").replace('\r', '\n').split("\n", -1)) {
+                if (line.isEmpty()) {
+                    if (appendSseError(event, data)) return;
+                    data.setLength(0);
+                } else if (line.startsWith("data:")) {
+                    if (!data.isEmpty()) data.append('\n');
+                    String part = line.substring(5);
+                    data.append(part.startsWith(" ") ? part.substring(1) : part);
+                }
+            }
+            appendSseError(event, data);
+        }
+    }
+
+    private boolean appendSseError(StringBuilder event, StringBuilder data) {
+        if (data.isEmpty()) return false;
+        try { return appendErrorFields(event, redactor.json(data.toString()), 200); }
+        catch (Exception invalid) { return false; }
+    }
+
+    private boolean appendErrorFields(StringBuilder event, JsonNode value, int status) {
+        if (value == null || !value.isObject()) return false;
+        JsonNode error = value.path("error");
+        if (error.isMissingNode() || error.isNull()) error = value.path("response").path("error");
+        boolean failed = status >= 400 || !error.isMissingNode() && !error.isNull()
+                || "error".equals(value.path("type").asText());
+        if (!failed) return false;
+        if (error.isMissingNode() || error.isNull()) error = value;
+        if (error.isTextual()) field(event, "厂商错误", error.asText());
+        else {
+            errorField(event, "厂商错误", error, "message");
+            errorField(event, "错误类型", error, "type");
+            errorField(event, "错误代码", error, "code");
+        }
+        JsonNode owner = error.has("request_id") ? error
+                : value.path("response").has("request_id") ? value.path("response") : value;
+        errorField(event, "请求 ID", owner, "request_id");
+        return true;
+    }
+
+    private void errorField(StringBuilder event, String label, JsonNode value, String key) {
+        JsonNode fieldValue = value.path(key);
+        if (fieldValue.isValueNode() && !fieldValue.isNull()) field(event, label, fieldValue.asText());
     }
 
     private void wire(long requestId, int attempt, String title, String details, String value, boolean truncated) {
@@ -205,10 +271,6 @@ public final class ExecutionTrace implements AutoCloseable {
     }
 
     public synchronized void response(long requestId, ChatResponse response, long elapsedMillis) {
-        response(requestId, response, elapsedMillis, true);
-    }
-
-    public synchronized void response(long requestId, ChatResponse response, long elapsedMillis, boolean includeBody) {
         if (disabled || closed) return;
         try {
             if (!ensureOpen()) return;
@@ -216,12 +278,12 @@ public final class ExecutionTrace implements AutoCloseable {
             field(event, "结束原因", response.finishReason().name());
             usage(event, response.usage());
             String source = requestSources.remove(requestId);
-            if (!includeBody) {
-                event.append("完整回复见同编号 HTTP 响应报文；此处不再重复展示正文。\n\n");
-            } else if ("reviewer".equals(source)) {
+            if ("reviewer".equals(source)) {
                 renderReview(event, response);
             } else {
-                body(event, "回复正文", response.text(), MAX_CONTENT_CHARS, false);
+                if (!response.text().isEmpty()) body(event, "回复正文", response.text(), MAX_CONTENT_CHARS, false);
+                else event.append(response.toolCalls().isEmpty()
+                        ? "厂商未返回可展示的正文。\n\n" : "本次回复请求执行工具，没有文字正文。\n\n");
                 for (ToolCall call : response.toolCalls()) renderToolCall(event, call);
             }
             metadata(event, response.providerMetadata().size());
@@ -230,7 +292,7 @@ public final class ExecutionTrace implements AutoCloseable {
         catch (Exception failure) { stop(false); }
     }
 
-    /** 仅在适配器未提供 HTTP 观察事件时，补充记录已显示片段。 */
+    /** 流中断时记录已经显示的文字，避免要求用户阅读 SSE 原始事件。 */
     public synchronized void partial(long requestId, String text) {
         if (disabled || closed) return;
         try {
@@ -339,9 +401,9 @@ public final class ExecutionTrace implements AutoCloseable {
             StringBuilder header = new StringBuilder("# YLCoder 执行日志\n\n");
             field(header, "会话 ID", sessionId);
             field(header, "开始时间（UTC）", Instant.now().toString());
-            header.append("\n本文记录实际 HTTP 请求与响应正文（已脱敏），以及模型用量、重试和工具过程。请求头不记录；URL 查询参数和用户信息省略。没有 HTTP 观察能力的适配器会明确标为逻辑请求备用记录。\n\n")
-                    .append("HTTP 报文的 body 保留协议结构；references 用 JSON Pointer 指向 new_content 首次保存的值，可在本文件定位还原。该占位仅影响日志，不修改发送内容。工具过程摘要最多展示 ").append(toolResultMaxChars)
-                    .append(" 字符；HTTP 正文独立保留，捕获上限为 8 MiB，达到上限或流中断会明确标记。JSON 会格式化；SSE 为实际读取的文本，不保证包含协议结束后未读取的字节。\n\n")
+            header.append("\n本文记录实际 HTTP 请求正文和解析后的模型回复（已脱敏），以及模型用量、重试和工具过程。请求头不记录；URL 查询参数和用户信息省略。没有 HTTP 观察能力的适配器会明确标为逻辑请求备用记录。\n\n")
+                    .append("请求报文的 body 首次直接展示正文，重复内容通过 references 和 content_locations 定位；该占位仅影响日志，不修改发送内容。返回只展示已解析的回答、工具调用、用量和错误，不保存原始响应 JSON/SSE。工具过程摘要最多展示 ").append(toolResultMaxChars)
+                    .append(" 字符；请求正文独立保留，捕获上限为 8 MiB，达到上限或流中断会明确标记。回答沿用适配器解析结果，不额外调用模型。\n\n")
                     .append("单个任务文件最大 32 MiB；达到上限会明确停止记录并提示。日志异常不影响任务执行。\n");
             output.append(header.toString());
             return true;
@@ -387,14 +449,12 @@ public final class ExecutionTrace implements AutoCloseable {
                 if (!List.of("decision", "reason").contains(field) || !parsed.get(field).isTextual())
                     throw new IllegalArgumentException("审核格式无效");
             }
-            Map<String, String> visible = new LinkedHashMap<>();
-            visible.put("decision", parsed.path("decision").textValue());
             if (parsed.has("reason")) {
                 if (parsed.path("reason").textValue().codePointCount(0, parsed.path("reason").textValue().length()) > 80)
                     throw new IllegalArgumentException("审核理由超过长度限制");
-                visible.put("reason", parsed.path("reason").textValue());
             }
-            body(event, "审核结构化结果", TraceRedactor.JSON.writeValueAsString(visible), 1_024, false);
+            field(event, "审核结论", "approve".equals(parsed.path("decision").asText()) ? "允许" : "需要人工确认");
+            if (parsed.has("reason")) field(event, "审核原因", parsed.path("reason").textValue());
         } catch (LimitReached limit) {
             throw limit;
         } catch (Exception invalid) {

@@ -179,9 +179,9 @@ class ResponsesApprovalCliTest {
         assertEquals(2, log.split("- 来源：agent", -1).length - 1);
         assertEquals(1, log.split("- 来源：reviewer", -1).length - 1);
         assertTrue(log.contains("responses-main-fixture") && log.contains("responses-review-fixture"), log);
-        assertTrue(log.contains("HTTP 响应报文 #2") && log.contains(REVIEW_REASON), log);
+        assertTrue(log.contains("HTTP 响应状态 #2") && log.contains(REVIEW_REASON), log);
         assertEquals(3, log.split("## HTTP 请求报文 #", -1).length - 1);
-        assertEquals(3, log.split("## HTTP 响应报文 #", -1).length - 1);
+        assertEquals(3, log.split("## HTTP 响应状态 #", -1).length - 1);
         assertTrue(log.contains("工具开始") && log.contains("工具完成"), log);
         assertFalse(log.contains(KEY), "配置凭据不能写进日志");
         assertFalse(log.contains("conversation-fixture-secret"), "用户内容中的凭据也应遮盖");

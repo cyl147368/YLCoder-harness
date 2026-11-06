@@ -1,8 +1,13 @@
 """校验新旧执行日志的报文还原；仅使用内存夹具。"""
 import json
+import io
+import tempfile
+from contextlib import redirect_stderr
+from pathlib import Path
+from unittest.mock import patch
 import unittest
 
-from read_model_trace import read_wire_events
+from read_model_trace import main, read_wire_events
 
 
 def section(number, envelope, legacy=False):
@@ -48,6 +53,35 @@ class ReadModelTraceTest(unittest.TestCase):
         envelope = {'format_version': 2, 'body': {}, 'content_locations': {'wire-1': '/missing'}, 'references': {}}
         with self.assertRaises(KeyError):
             read_wire_events(section(1, envelope))
+
+    def test_processed_response_sections_do_not_affect_request_reconstruction(self):
+        first = {'format_version': 2, 'body': {'content': '系统提示词'},
+                 'content_locations': {'wire-1': '/content'}, 'references': {}}
+        second = {'format_version': 2, 'body': {'content': '[引用 wire-1]'},
+                  'content_locations': {}, 'references': {'/content': 'wire-1'}}
+        text = section(1, first) + '## HTTP 响应状态 #1\n\nHTTP 200\n\n## 模型回复 #1\n\n你好\n\n' + section(2, second)
+        events = read_wire_events(text)
+        self.assertEqual([event['body'] for event in events], [{'content': '系统提示词'}] * 2)
+        self.assertTrue(all(event['kind'] == 'request' for event in events))
+
+    def test_old_raw_response_can_still_be_reconstructed(self):
+        envelope = {'body': {'content': '[引用 wire-1]'}, 'references': {'/content': 'wire-1'},
+                    'new_content': {'wire-1': '旧版回复'}}
+        events = read_wire_events(section(1, envelope, True).replace('HTTP 请求报文', 'HTTP 响应报文'))
+        self.assertEqual(events[0]['kind'], 'response')
+        self.assertEqual(events[0]['body'], {'content': '旧版回复'})
+
+    def test_response_filter_explains_processed_logs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            file = Path(directory) / 'processed.md'
+            file.write_text('## HTTP 响应状态 #1\n\nHTTP 200\n', encoding='utf-8')
+            error = io.StringIO()
+            with patch('sys.argv', ['read_model_trace.py', str(file), '--kind', 'response']), redirect_stderr(error):
+                with self.assertRaises(SystemExit) as exit_result:
+                    main()
+            self.assertEqual(exit_result.exception.code, 1)
+            self.assertIn('不保存原始响应 JSON/SSE', error.getvalue())
+            self.assertNotIn('不能还原实际请求', error.getvalue())
 
 
 if __name__ == '__main__':

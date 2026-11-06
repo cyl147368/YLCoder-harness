@@ -234,8 +234,8 @@ class ExecutionTraceTest {
         trace.partial(invalid, "PRIVATE-REASONING partial reviewer");
         trace.response(invalid, ChatResponse.text("{\"decision\":\"approve\",\"reason\":\"fine\",\"thinking\":\"PRIVATE-REASONING\"}"), 10);
         trace.close(); String text = read(trace);
-        assertTrue(text.contains("来源：reviewer")); assertTrue(text.contains("审核结构化结果"));
-        assertTrue(text.contains("\"decision\":\"approve\"")); assertTrue(text.contains("只读"));
+        assertTrue(text.contains("来源：reviewer")); assertTrue(text.contains("审核结论：允许"));
+        assertFalse(text.contains("\"decision\":\"approve\"")); assertTrue(text.contains("只读"));
         assertFalse(text.contains("secret-review-value")); assertFalse(text.contains("PRIVATE-"));
         assertTrue(text.contains("审核回复结构无效"));
     }

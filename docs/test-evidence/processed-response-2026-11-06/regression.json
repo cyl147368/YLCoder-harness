@@ -1,0 +1,68 @@
+{
+  "verifiedAtUtc": "2026-11-06T08:55:29.465Z",
+  "scope": "本轮针对日志修改的回归；未重跑全项目完整测试；所有模型测试仅使用 localhost。",
+  "javaSuites": [
+    {
+      "name": "dev.codeharness.cli.ExecutionTraceCliTest",
+      "tests": 12,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "skippedReasons": []
+    },
+    {
+      "name": "dev.codeharness.cli.ResponsesApprovalCliTest",
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "skippedReasons": []
+    },
+    {
+      "name": "dev.codeharness.cli.trace.ExecutionTraceTest",
+      "tests": 19,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 1,
+      "skippedReasons": []
+    },
+    {
+      "name": "dev.codeharness.cli.trace.ProcessedResponseTraceTest",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "skippedReasons": []
+    },
+    {
+      "name": "dev.codeharness.cli.trace.WirePayloadsTest",
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "skippedReasons": []
+    }
+  ],
+  "javaTotals": {
+    "tests": 51,
+    "passed": 50,
+    "skipped": 1,
+    "failures": 0,
+    "errors": 0
+  },
+  "pythonReader": {
+    "tests": 8,
+    "passed": 8
+  },
+  "globalInstallation": {
+    "jarSha256": "c568fdd2fd3bf1ef55a1982b21a20edbed15fd7ae113a2c089e6be43ba5c78d0",
+    "installedJarSha256": "c568fdd2fd3bf1ef55a1982b21a20edbed15fd7ae113a2c089e6be43ba5c78d0",
+    "configMetadataUnchanged": true
+  },
+  "commands": [
+    "mvn -o -s target/maven-review-settings.xml -Dtest=WirePayloadsTest,ExecutionTraceTest,ExecutionTraceCliTest,ResponsesApprovalCliTest,ProcessedResponseTraceTest -Dsurefire.failIfNoSpecifiedTests=false package",
+    "python -m unittest discover -s scripts -p test_read_model_trace.py -v",
+    "python scripts/install.py",
+    "python scripts/smoke_execution_trace.py --launcher C:\\Users\\Admin\\AppData\\Local\\YLCoder-harness\\bin\\ylc.cmd --output target/processed-response-global-smoke.json"
+  ]
+}

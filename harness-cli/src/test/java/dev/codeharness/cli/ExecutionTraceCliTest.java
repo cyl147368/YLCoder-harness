@@ -76,6 +76,8 @@ class ExecutionTraceCliTest {
         assertTrue(requests.getLast().toString().contains("工具结果尾部标记"), "工具预览限制不得缩短发给模型的结果");
         assertTrue(log.contains("已截断") && log.contains("content_locations"), log);
         assertTrue(log.contains(ANSWER), log);
+        assertEquals(2, count(log, "## HTTP 响应状态 #"));
+        assertFalse(log.contains("HTTP 响应报文") || log.contains("\"choices\"") || log.contains("response-fixture"), log);
         assertTrue(log.contains("输入 17") && log.contains("缓存输入 9"), log);
         assertEquals(1, count(log, "请读取 sample.txt 并记录本次提示词"));
         assertFalse(log.contains(KEY), log);
@@ -129,8 +131,9 @@ class ExecutionTraceCliTest {
         String log = Files.readString(Path.of(JSON.readTree(run.out).path("traceFile").asText()));
         assertEquals(1, requests.size());
         assertTrue(delays.isEmpty());
-        assertTrue(log.contains("HTTP 响应报文") && log.contains("已显示的半段回复") && log.contains("fixture stream failed"), log);
-        assertTrue(log.contains("模型请求失败"), log);
+        assertTrue(log.contains("HTTP 响应状态") && log.contains("已显示的半段回复") && log.contains("fixture stream failed"), log);
+        assertTrue(log.contains("模型请求失败") && log.contains("未完成回复片段"), log);
+        assertFalse(log.contains("data:") || log.contains("\"delta\"") || log.contains("HTTP 响应报文"), log);
         assertFalse(log.contains("## 模型回复 #"), log);
     }
 

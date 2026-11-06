@@ -116,11 +116,11 @@ final class TraceRecorder {
                         if (listener != null) listener.accept(text);
                     }) : delegate.complete(request);
                     if (!wire.observed()) capture.log.logicalFallback(id, request);
-                    capture.log.response(id, response, elapsed(started), !wire.observed());
+                    capture.log.response(id, response, elapsed(started));
                     return response;
                 } catch (RuntimeException | Error failure) {
                     if (!wire.observed()) capture.log.logicalFallback(id, request);
-                    if (!wire.observed() && !partial.isEmpty()) capture.log.partial(id, partial + (truncated.get() ? "\n[部分回复摘要已截断]" : ""));
+                    if (!partial.isEmpty()) capture.log.partial(id, partial + (truncated.get() ? "\n[部分回复摘要已截断]" : ""));
                     capture.log.failure(id, failure, elapsed(started));
                     throw failure;
                 } finally { capture.release(); }

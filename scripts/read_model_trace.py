@@ -80,12 +80,15 @@ def main():
     parser.add_argument('--kind', choices=('request', 'response'), help='只展示请求或响应')
     options = parser.parse_args()
     try:
-        events = read_wire_events(options.file.read_text(encoding='utf-8'))
+        text = options.file.read_text(encoding='utf-8')
+        events = read_wire_events(text)
     except (OSError, ValueError, KeyError, IndexError, TypeError) as failure:
         parser.exit(1, '无法读取完整报文日志：' + str(failure) + '\n')
     selected = [event for event in events if (options.request is None or options.request == event['request'])
                 and (options.kind is None or options.kind == event['kind'])]
     if not selected:
+        if options.kind == 'response' and '## HTTP 响应状态 #' in text:
+            parser.exit(1, '此日志已将返回内容整理在“模型回复 / 未完成回复片段 / 模型请求失败”中，不保存原始响应 JSON/SSE；请直接查看日志。\n')
         parser.exit(1, '没有找到对应的 HTTP 报文；旧版日志只有逻辑消息，不能还原实际请求。\n')
     for event in selected:
         name = '请求' if event['kind'] == 'request' else '响应'

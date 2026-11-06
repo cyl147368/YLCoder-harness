@@ -156,7 +156,22 @@ class Fixture:
                         payload = result_payload(protocol, '准备审核日期查询。', ('trace-date', 'run_command', '{"command":"date"}'), sequence=request_index)
                     else:
                         payload = result_payload(protocol, ANSWER, sequence=request_index)
-                    self.send(200, 'application/json', json.dumps(payload, ensure_ascii=False))
+                    if fixture.scenario == 'stream':
+                        assert request.get('stream')
+                        parts = (ANSWER[:6], ANSWER[6:])
+                        if protocol == 'responses':
+                            item_id = payload['output'][0]['id']
+                            events = [{'type': 'response.output_text.delta', 'item_id': item_id,
+                                       'output_index': 0, 'content_index': 0, 'delta': part,
+                                       'sequence_number': index} for index, part in enumerate(parts)]
+                            events.append({'type': 'response.completed', 'sequence_number': len(events), 'response': payload})
+                        else:
+                            events = [{'choices': [{'index': 0, 'delta': {'content': part}, 'finish_reason': None}]} for part in parts]
+                            events.append({'choices': [{'index': 0, 'delta': {}, 'finish_reason': 'stop'}], 'usage': payload['usage']})
+                        wire_text = ''.join('data: ' + json.dumps(event, ensure_ascii=False) + '\n\n' for event in events)
+                        self.send(200, 'text/event-stream', wire_text + ('data: [DONE]\n\n' if protocol == 'chat' else ''))
+                    else:
+                        self.send(200, 'application/json', json.dumps(payload, ensure_ascii=False))
                 except Exception as failure:
                     fixture.failures.append(type(failure).__name__ + ': ' + str(failure).replace(KEY, '[模拟凭据]').replace(REVIEW_KEY, '[模拟凭据]'))
                     try:
@@ -220,7 +235,7 @@ def verify_case(java, jar, launcher, base, api_format, scenario):
             if scenario == 'blocked':
                 (workspace / '.harness').mkdir()
                 (workspace / '.harness/logs').write_text('原有占位文件', encoding='utf-8')
-            flags = [] if scenario in ('retry', 'partial') else ['--no-stream']
+            flags = [] if scenario in ('retry', 'partial', 'stream') else ['--no-stream']
             result, elapsed = invoke(java, jar, launcher, workspace, home, arguments + flags + ['--json', 'run', TASK])
             processes.append(elapsed)
             assert result.returncode == (1 if scenario == 'partial' else 0), result.stderr
@@ -239,24 +254,19 @@ def verify_case(java, jar, launcher, base, api_format, scenario):
             else:
                 file, text = trace_contents(workspace, report)
                 files.append({'sha256': digest(file.read_bytes()), 'bytes': file.stat().st_size})
-                expected = {'tools': 2, 'review': 3, 'retry': 4, 'partial': 1}[scenario]
+                expected = {'tools': 2, 'review': 3, 'retry': 4, 'partial': 1, 'stream': 1}[scenario]
                 assert len(fixture.requests) == expected, '记录功能额外请求了模型'
                 assert text.count('## 模型请求 #') == expected
                 wire = read_wire_events(text)
                 sent = [event['body'] for event in wire if event['kind'] == 'request']
                 received = [event['body'] for event in wire if event['kind'] == 'response']
                 assert sent == fixture.requests, '还原后的日志请求与服务端收到的报文不一致'
-                expected_responses = []
-                for response in fixture.responses:
-                    body = response['body']
-                    for secret in (KEY, REVIEW_KEY, HEADER_VALUE):
-                        body = body.replace(secret, '[已脱敏]')
-                    try:
-                        body = json.loads(body)
-                    except ValueError:
-                        pass
-                    expected_responses.append(body)
-                assert received == expected_responses, '还原后的响应与服务端发送内容不一致'
+                assert received == [], '新日志不应保存原始响应报文'
+                assert text.count('## HTTP 响应状态 #') == len(fixture.responses)
+                assert 'data: {' not in text and 'data: [DONE]' not in text
+                if scenario != 'partial':
+                    assert ANSWER in text, '解析后的完整回复缺失'
+                    assert '输入 17' in text and '缓存输入 9' in text
                 assert not any(event['truncated'] for event in wire)
                 if scenario == 'tools':
                     assert '工具开始' in text and '工具完成' in text and 'trace-read' in text
@@ -272,7 +282,9 @@ def verify_case(java, jar, launcher, base, api_format, scenario):
                     next_file, next_text = trace_contents(workspace, resumed)
                     resumed_wire = read_wire_events(next_text)
                     assert [event['body'] for event in resumed_wire if event['kind'] == 'request'] == fixture.requests[2:]
-                    assert [event['body'] for event in resumed_wire if event['kind'] == 'response'] == [json.loads(item['body']) for item in fixture.responses[2:]]
+                    assert not any(event['kind'] == 'response' for event in resumed_wire)
+                    assert ANSWER in next_text and '## 模型回复 #1' in next_text
+                    assert next_text.count('## HTTP 响应状态 #') == 1
                     assert next_file.parent == file.parent and next_file != file
                     assert FOLLOWUP in next_text and TASK in next_text
                     files.append({'sha256': digest(next_file.read_bytes()), 'bytes': next_file.stat().st_size})
@@ -290,21 +302,26 @@ def verify_case(java, jar, launcher, base, api_format, scenario):
                     assert len(fixture.requests) == 3
                 elif scenario == 'review':
                     assert text.count('- 来源：agent') == 2 and text.count('- 来源：reviewer') == 1
-                    assert 'trace-review-model' in text and 'HTTP 响应报文' in text and '审核过程记录标记' in text
+                    assert 'trace-review-model' in text and '审核结论：允许' in text and '审核过程记录标记' in text
                     assert '工具完成' in text and report['review']['requests'] == 1 and report['review']['approved'] == 1
                 elif scenario == 'retry':
                     assert text.count('## 模型请求失败 #') == 3 and text.count(TASK) == 1
                     assert 'HTTP 状态码 400' in text and '流式' in text and '非流式' in text
                     intervals = [fixture.times[index + 1] - fixture.times[index] for index in range(3)]
                     assert all(delay >= minimum for delay, minimum in zip(intervals, (0.9, 1.9, 3.9))), intervals
+                elif scenario == 'stream':
+                    assert text.count(ANSWER) == 1 and '## 模型回复 #1' in text
+                    assert 'response.output_text.delta' not in text and '"choices"' not in text
                 else:
+                    assert '未完成回复片段 #1' in text
                     assert PARTIAL in text and '响应读取未完成' in text and '模型请求失败' in text
                     assert '## 模型回复 #' not in text
             assert report['traceFile'] is None or Path(report['traceFile']).parent.name == report['session']
         assert not fixture.failures, fixture.failures
         request_hashes = [digest(json.dumps(request, ensure_ascii=False, sort_keys=True).encode('utf-8')) for request in fixture.requests]
         return {'apiFormat': api_format, 'scenario': scenario, 'passed': True, 'modelRequests': len(fixture.requests),
-                'wireRoundTripVerified': scenario in ('tools', 'review', 'retry', 'partial'),
+                'requestWireRoundTripVerified': scenario in ('tools', 'review', 'retry', 'partial', 'stream'),
+                'processedResponseVerified': scenario in ('tools', 'review', 'retry', 'partial', 'stream'),
                 'paths': fixture.paths, 'requestSha256': request_hashes, 'processElapsedMs': processes, 'traceFiles': files,
                 'retryIntervalsSeconds': [round(fixture.times[i + 1] - fixture.times[i], 3) for i in range(3)] if scenario == 'retry' else []}
     finally:
@@ -336,7 +353,7 @@ def main():
     with zipfile.ZipFile(jar) as archive:
         assert all(name in archive.namelist() for name in required), '运行包缺少必要类'
     cases = [('chat', 'tools'), ('responses', 'tools'), ('chat', 'review'), ('chat', 'retry'),
-             ('responses', 'retry'), ('chat', 'partial'), ('chat', 'disabled'), ('chat', 'blocked'), ('chat', 'local')]
+             ('responses', 'retry'), ('chat', 'partial'), ('chat', 'stream'), ('responses', 'stream'), ('chat', 'disabled'), ('chat', 'blocked'), ('chat', 'local')]
     started = time.monotonic()
     target = ROOT / 'target'
     target.mkdir(exist_ok=True)
