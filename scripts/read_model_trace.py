@@ -7,14 +7,28 @@ import re
 import sys
 
 
+def value_at(body, pointer):
+    """从首条报文的原字段获取正文；空路径代表整个文本或 SSE。"""
+    if pointer == '':
+        return body
+    if not isinstance(pointer, str) or not pointer.startswith('/'):
+        raise ValueError('无效的报文内容位置：' + str(pointer))
+    for part in pointer[1:].split('/'):
+        part = part.replace('~1', '/').replace('~0', '~')
+        body = body[int(part)] if isinstance(body, list) else body[part]
+    return body
+
+
 def read_wire_events(text):
     dictionary = {}
     events = []
     sections = re.finditer(r'^## HTTP (请求|响应)报文 #(\d+)\n(.*?)(?=^## |\Z)', text, re.M | re.S)
     for section in sections:
         kind, number, details = section.groups()
-        marker = '报文内容（body）、引用位置（references）、本次首次出现的内容（new_content）：'
-        if marker not in details:
+        markers = ('报文内容（body）；首次内容直接展示，重复内容使用引用：',
+                   '报文内容（body）、引用位置（references）、本次首次出现的内容（new_content）：')
+        marker = next((value for value in markers if value in details), None)
+        if marker is None:
             raise ValueError('报文未记录完整，缺少内容区')
         lines = details.split(marker, 1)[1].lstrip('\r\n').splitlines()
         block = []
@@ -23,7 +37,15 @@ def read_wire_events(text):
                 break
             block.append(line[4:])
         envelope = json.loads('\n'.join(block))
-        for identifier, value in envelope['new_content'].items():
+        version = envelope.get('format_version', 1)
+        if version not in (1, 2):
+            raise ValueError('不支持的报文格式版本：' + str(version))
+        if version == 2:
+            additions = {identifier: value_at(envelope['body'], pointer)
+                         for identifier, pointer in envelope['content_locations'].items()}
+        else:
+            additions = envelope['new_content']
+        for identifier, value in additions.items():
             if identifier in dictionary and dictionary[identifier] != value:
                 raise ValueError('同一引用出现冲突：' + identifier)
             dictionary[identifier] = value

@@ -1,0 +1,47 @@
+{
+  "date": "2026-11-06",
+  "scope": "日志展示与新旧报文还原回归；本机模拟模型，不使用真实厂商",
+  "java": {
+    "tests": 45,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 1,
+    "passed": 44,
+    "suites": [
+      {
+        "name": "dev.codeharness.cli.ExecutionTraceCliTest",
+        "tests": 12,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "dev.codeharness.cli.ResponsesApprovalCliTest",
+        "tests": 7,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "name": "dev.codeharness.cli.trace.ExecutionTraceTest",
+        "tests": 19,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 1
+      },
+      {
+        "name": "dev.codeharness.cli.trace.WirePayloadsTest",
+        "tests": 7,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    ]
+  },
+  "python": {
+    "tests": 5,
+    "passed": 5
+  },
+  "runtimeSha256": "54776feaf437b8b37f518128f520aa05759239518f6e5ce56b05ccf1ce207424",
+  "configurationMetadataUnchanged": true
+}

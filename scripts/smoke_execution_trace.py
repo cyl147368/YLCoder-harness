@@ -262,7 +262,7 @@ def verify_case(java, jar, launcher, base, api_format, scenario):
                     assert '工具开始' in text and '工具完成' in text and 'trace-read' in text
                     assert PREFIX in text and TAIL in text and '已截断' in text
                     assert TAIL in json.dumps(fixture.requests[-1], ensure_ascii=False)
-                    assert text.count(TASK) == 1 and 'new_content' in text
+                    assert text.count(TASK) == 1 and 'content_locations' in text
                     assert '输入 17' in text and '缓存输入 9' in text
                     resume, elapsed = invoke(java, jar, launcher, workspace, home, arguments + ['--no-stream', '--json', 'resume', report['session'], FOLLOWUP])
                     processes.append(elapsed)

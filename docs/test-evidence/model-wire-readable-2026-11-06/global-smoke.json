@@ -1,0 +1,257 @@
+{
+  "passed": true,
+  "completedAtUtc": "2026-11-06T08:33:34.729897+00:00",
+  "jar": "C:\\Users\\Admin\\AppData\\Local\\YLCoder-harness\\lib\\ylc-54776feaf437b8b37f518128f520aa05759239518f6e5ce56b05ccf1ce207424.jar",
+  "jarSha256": "54776feaf437b8b37f518128f520aa05759239518f6e5ce56b05ccf1ce207424",
+  "launcher": "C:\\Users\\Admin\\AppData\\Local\\YLCoder-harness\\bin\\ylc.cmd",
+  "scope": "真实 CLI 进程；仅 localhost 模型夹具，独立 home 和工作区；未加载真实用户私有配置。",
+  "cases": [
+    {
+      "apiFormat": "chat",
+      "scenario": "tools",
+      "passed": true,
+      "modelRequests": 3,
+      "wireRoundTripVerified": true,
+      "paths": [
+        "/v1/chat/completions",
+        "/v1/chat/completions",
+        "/v1/chat/completions"
+      ],
+      "requestSha256": [
+        "3a509760238d8c7d8cd3af573b2c1c0188208a5cb87640b35ac08a319ae8eefc",
+        "f3105b2b08bcbb520b949d2f5f00760c4129327fff9b766895d1c655c3c75c99",
+        "b5cb00d9fa6b4674ea16fc921ace48ed5fac089c6f1b391e4f3427f5b3a8cc60"
+      ],
+      "processElapsedMs": [
+        9558.879,
+        9399.282,
+        9226.043,
+        374.285
+      ],
+      "traceFiles": [
+        {
+          "sha256": "7d31329e7f7d846c886606cef6b371337e07e41a6e04ba5cebb8175cc1d7e8c7",
+          "bytes": 23927
+        },
+        {
+          "sha256": "c4754bd9cf7826d9d3cdcd36bf25c429eee7e884da6fe6c27930007e9471cd70",
+          "bytes": 18948
+        }
+      ],
+      "retryIntervalsSeconds": []
+    },
+    {
+      "apiFormat": "responses",
+      "scenario": "tools",
+      "passed": true,
+      "modelRequests": 3,
+      "wireRoundTripVerified": true,
+      "paths": [
+        "/v1/responses",
+        "/v1/responses",
+        "/v1/responses"
+      ],
+      "requestSha256": [
+        "927ec6f50ee457c333483e14d286c2162f1faa9f7d738230b06c360b8fef099b",
+        "9554ebb24ef79a33c967ef0b6df2e19b4c59f4dd69ed2bb72ac26950b1d34184",
+        "af2a7aabf8b38968e006c5ff64edca9e284438ab558a1b94f948875fc3868516"
+      ],
+      "processElapsedMs": [
+        9464.165,
+        9405.735,
+        9197.146,
+        368.873
+      ],
+      "traceFiles": [
+        {
+          "sha256": "4ca985a0b413094f91179a21f6bfb7dab95aa433e6bd0f93e2b08ac998408577",
+          "bytes": 23941
+        },
+        {
+          "sha256": "03c16c664fec3d6b3067e12f8932d98d866453075412fa9013d5749359259fdf",
+          "bytes": 19018
+        }
+      ],
+      "retryIntervalsSeconds": []
+    },
+    {
+      "apiFormat": "chat",
+      "scenario": "review",
+      "passed": true,
+      "modelRequests": 3,
+      "wireRoundTripVerified": true,
+      "paths": [
+        "/v1/chat/completions",
+        "/v1/responses",
+        "/v1/chat/completions"
+      ],
+      "requestSha256": [
+        "3a509760238d8c7d8cd3af573b2c1c0188208a5cb87640b35ac08a319ae8eefc",
+        "1ef51ed53cd6c443f982eb43541f3a3ec0da9987633ef59e04e07686873cc57d",
+        "13401c9f8235d415830e9158765510c2416426cad42c5f225c1d0cf8f29f4124"
+      ],
+      "processElapsedMs": [
+        9669.352
+      ],
+      "traceFiles": [
+        {
+          "sha256": "f2a6872601c42ced900b8a6608e4535bb39cdf545eecef0896d28d5dccdaf287",
+          "bytes": 26929
+        }
+      ],
+      "retryIntervalsSeconds": []
+    },
+    {
+      "apiFormat": "chat",
+      "scenario": "retry",
+      "passed": true,
+      "modelRequests": 4,
+      "wireRoundTripVerified": true,
+      "paths": [
+        "/v1/chat/completions",
+        "/v1/chat/completions",
+        "/v1/chat/completions",
+        "/v1/chat/completions"
+      ],
+      "requestSha256": [
+        "49501c13f2bf9d8c886527f1091465dc871a22a8b2c78f269868f6a25975543b",
+        "3a509760238d8c7d8cd3af573b2c1c0188208a5cb87640b35ac08a319ae8eefc",
+        "3a509760238d8c7d8cd3af573b2c1c0188208a5cb87640b35ac08a319ae8eefc",
+        "3a509760238d8c7d8cd3af573b2c1c0188208a5cb87640b35ac08a319ae8eefc"
+      ],
+      "processElapsedMs": [
+        16514.714
+      ],
+      "traceFiles": [
+        {
+          "sha256": "6a9d0a69c2afa7d60bfdc0e64281c4aba5bc48cf0aaf57b76afab347a7319ece",
+          "bytes": 25684
+        }
+      ],
+      "retryIntervalsSeconds": [
+        1.073,
+        2.034,
+        4.034
+      ]
+    },
+    {
+      "apiFormat": "responses",
+      "scenario": "retry",
+      "passed": true,
+      "modelRequests": 4,
+      "wireRoundTripVerified": true,
+      "paths": [
+        "/v1/responses",
+        "/v1/responses",
+        "/v1/responses",
+        "/v1/responses"
+      ],
+      "requestSha256": [
+        "9481b3bc9e4cc1e7dbe6cf5d6bebef7091b9df26a11bd3929bcba8b90073662e",
+        "927ec6f50ee457c333483e14d286c2162f1faa9f7d738230b06c360b8fef099b",
+        "927ec6f50ee457c333483e14d286c2162f1faa9f7d738230b06c360b8fef099b",
+        "927ec6f50ee457c333483e14d286c2162f1faa9f7d738230b06c360b8fef099b"
+      ],
+      "processElapsedMs": [
+        16492.613
+      ],
+      "traceFiles": [
+        {
+          "sha256": "ef92cac81753c2533a33fe4d4f6d2092b8256846e731eb43b01a7b455c55d543",
+          "bytes": 25632
+        }
+      ],
+      "retryIntervalsSeconds": [
+        1.058,
+        2.043,
+        4.032
+      ]
+    },
+    {
+      "apiFormat": "chat",
+      "scenario": "partial",
+      "passed": true,
+      "modelRequests": 1,
+      "wireRoundTripVerified": true,
+      "paths": [
+        "/v1/chat/completions"
+      ],
+      "requestSha256": [
+        "49501c13f2bf9d8c886527f1091465dc871a22a8b2c78f269868f6a25975543b"
+      ],
+      "processElapsedMs": [
+        9524.875
+      ],
+      "traceFiles": [
+        {
+          "sha256": "2b92a9e720127405ecf6adc4fb4e8965138efe13c2eba370149d6437d9754324",
+          "bytes": 15517
+        }
+      ],
+      "retryIntervalsSeconds": []
+    },
+    {
+      "apiFormat": "chat",
+      "scenario": "disabled",
+      "passed": true,
+      "modelRequests": 1,
+      "wireRoundTripVerified": false,
+      "paths": [
+        "/v1/chat/completions"
+      ],
+      "requestSha256": [
+        "3a509760238d8c7d8cd3af573b2c1c0188208a5cb87640b35ac08a319ae8eefc"
+      ],
+      "processElapsedMs": [
+        9379.211
+      ],
+      "traceFiles": [],
+      "retryIntervalsSeconds": []
+    },
+    {
+      "apiFormat": "chat",
+      "scenario": "blocked",
+      "passed": true,
+      "modelRequests": 1,
+      "wireRoundTripVerified": false,
+      "paths": [
+        "/v1/chat/completions"
+      ],
+      "requestSha256": [
+        "3a509760238d8c7d8cd3af573b2c1c0188208a5cb87640b35ac08a319ae8eefc"
+      ],
+      "processElapsedMs": [
+        9494.676
+      ],
+      "traceFiles": [],
+      "retryIntervalsSeconds": []
+    },
+    {
+      "apiFormat": "chat",
+      "scenario": "local",
+      "passed": true,
+      "modelRequests": 0,
+      "wireRoundTripVerified": false,
+      "paths": [],
+      "requestSha256": [],
+      "processElapsedMs": [
+        370.304
+      ],
+      "traceFiles": [],
+      "retryIntervalsSeconds": []
+    }
+  ],
+  "totalCases": 9,
+  "modelRequests": 20,
+  "elapsedMs": 131513.336,
+  "requiredClasses": [
+    "dev/codeharness/cli/TraceRecorder.class",
+    "dev/codeharness/cli/TraceFiles.class",
+    "dev/codeharness/cli/trace/ExecutionTrace.class",
+    "dev/codeharness/cli/trace/TraceFile.class",
+    "dev/codeharness/cli/trace/TraceRedactor.class",
+    "dev/codeharness/cli/trace/WirePayloads.class",
+    "dev/codeharness/providers/HttpExchangeTrace.class",
+    "dev/codeharness/cli/tools/UnifiedDiff.class"
+  ]
+}

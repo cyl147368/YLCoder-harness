@@ -18,9 +18,10 @@ final class WirePayloads {
         var result = TraceRedactor.JSON.createObjectNode();
         var references = TraceRedactor.JSON.createObjectNode();
         var additions = TraceRedactor.JSON.createObjectNode();
+        result.put("format_version", 2);
         result.set("body", walk(value, "", references, additions));
         result.set("references", references);
-        result.set("new_content", additions);
+        result.set("content_locations", additions);
         return result;
     }
 
@@ -36,7 +37,9 @@ final class WirePayloads {
                 if (entries.size() >= MAX_ENTRIES) return value;
                 id = "wire-" + ++sequence;
                 entries.put(hash, id);
-                additions.set(id, value);
+                // 首次正文保留在原字段，索引只保存位置，避免首屏全是占位符。
+                additions.put(id, pointer);
+                return value;
             }
             refs.put(pointer, id);
             return TraceRedactor.JSON.getNodeFactory().textNode("[引用 " + id + "]");

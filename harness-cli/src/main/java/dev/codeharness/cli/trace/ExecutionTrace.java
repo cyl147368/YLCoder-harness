@@ -38,6 +38,7 @@ public final class ExecutionTrace implements AutoCloseable {
     private final TraceRedactor redactor;
     private final Map<String, String> references = new HashMap<>();
     private final WirePayloads wirePayloads = new WirePayloads();
+    private final Map<String, String> wireOrigins = new HashMap<>();
     private final Map<Long, String> requestSources = new HashMap<>();
     private final int fileLimit;
     private TraceFile output;
@@ -181,16 +182,21 @@ public final class ExecutionTrace implements AutoCloseable {
             catch (Exception nonJson) { safe = TraceRedactor.JSON.getNodeFactory().textNode(redactor.text(raw)); }
             field(event, "正文格式", safe.isContainerNode() ? "JSON（保留字段；已脱敏、格式化）" : "文本或 SSE（已脱敏）");
             var projected = wirePayloads.project(safe);
-            var ids = projected.path("new_content").fieldNames();
-            while (ids.hasNext()) event.append("<a id=\"").append(ids.next()).append("\"></a>\n");
-            event.append("\n报文内容（body）、引用位置（references）、本次首次出现的内容（new_content）：\n\n");
+            var locations = projected.path("content_locations").fields();
+            while (locations.hasNext()) {
+                var entry = locations.next();
+                wireOrigins.put(entry.getKey(), title + " #" + requestId + "（尝试 " + attempt
+                        + "），body" + entry.getValue().asText());
+            }
+            event.append("\n报文内容（body）；首次内容直接展示，重复内容使用引用：\n\n");
             codeBlock(event, TraceRedactor.JSON.writerWithDefaultPrettyPrinter().writeValueAsString(projected));
             var refs = projected.path("references").fields();
-            if (refs.hasNext()) event.append("内容定位：");
+            if (refs.hasNext()) event.append("**重复内容定位（引用不是空值）：**\n\n");
             var linked = new java.util.HashSet<String>();
             while (refs.hasNext()) {
                 String reference = refs.next().getValue().asText();
-                if (linked.add(reference)) event.append(" [").append(reference).append("](#").append(reference).append(")");
+                if (linked.add(reference)) event.append("- ").append(reference).append(" → ")
+                        .append(inline(wireOrigins.get(reference))).append("\n");
             }
             event.append("\n\n");
             append(event.toString());
@@ -316,6 +322,7 @@ public final class ExecutionTrace implements AutoCloseable {
         requestSources.clear();
         references.clear();
         wirePayloads.clear();
+        wireOrigins.clear();
         if (output != null) {
             try { output.close(); }
             catch (IOException | RuntimeException ignored) { warn(IO_WARNING); }

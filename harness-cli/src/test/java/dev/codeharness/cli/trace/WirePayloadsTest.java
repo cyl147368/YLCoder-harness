@@ -24,15 +24,17 @@ class WirePayloadsTest {
         body.put("literal", "[引用 wire-1]");
         body.put("escaped/~name", "另一段长文本".repeat(100));
         var first = dictionary.project(body);
+        assertEquals(body, first.path("body"), "第一次应直接展示完整正文");
+        assertTrue(first.path("references").isEmpty(), "首次内容不是重复项");
         assertEquals(body, restore(first, all));
         body.withArray("messages").addObject().put("role", "tool").put("content", "工具尾部不得截断".repeat(1000));
         var second = dictionary.project(body);
         assertEquals(body, restore(second, all));
-        assertFalse(second.path("new_content").toString().contains("唯一系统提示词"));
-        assertFalse(second.path("new_content").toString().contains("read_file"));
-        assertTrue(second.path("new_content").toString().contains("工具尾部不得截断"));
+        assertFalse(second.path("body").toString().contains("唯一系统提示词"));
+        assertFalse(second.path("body").toString().contains("read_file"));
+        assertTrue(second.path("body").toString().contains("工具尾部不得截断"));
         var retry = dictionary.project(body);
-        assertTrue(retry.path("new_content").isEmpty());
+        assertTrue(retry.path("content_locations").isEmpty());
         assertEquals(body, restore(retry, all));
         assertEquals("[引用 wire-1]", restore(retry, all).path("literal").asText());
     }
@@ -47,7 +49,7 @@ class WirePayloadsTest {
         assertFalse(first.toString().contains("fixture-secret"));
         assertEquals("retain-me", restore(first, all).at("/provider_extension/mode").asText());
         var next = dictionary.project(redactor.json(two));
-        assertTrue(next.path("new_content").isEmpty());
+        assertTrue(next.path("content_locations").isEmpty());
         assertEquals(restore(first, all), restore(next, all));
     }
 
@@ -71,8 +73,9 @@ class WirePayloadsTest {
         assertTrue(log.contains("未完成"));
         assertTrue(log.contains("报文已截断"));
         assertFalse(log.contains("fixture-credential"));
-        assertTrue(log.contains("[wire-1](#wire-1)"));
-        assertTrue(log.contains("<a id=\"wire-1\"></a>"));
+        assertTrue(log.contains("[引用 wire-1]"));
+        assertTrue(log.contains("wire-1 → HTTP 请求报文 #1（尝试 1），body/messages/0/content"));
+        assertFalse(log.contains("<a id=\"wire-"), "HTTP 报文不应出现空的 HTML 锚点");
     }
 
     @Test void oversizedBodyCanShrinkBelowCaptureLimitAfterRedaction() throws Exception {
@@ -89,8 +92,47 @@ class WirePayloadsTest {
         assertFalse(log.contains(secret));
     }
 
+    @Test void repeatedContentWithinFirstRequestOnlyReplacesLaterOccurrences() throws Exception {
+        var dictionary = new WirePayloads();
+        var body = TraceRedactor.JSON.readTree("{\"messages\":[{\"content\":\"同一段正文\"},{\"content\":\"同一段正文\"}],\"empty\":\"\",\"absent\":null}");
+        var projection = dictionary.project(body);
+        assertEquals("同一段正文", projection.at("/body/messages/0/content").asText());
+        assertEquals("[引用 wire-1]", projection.at("/body/messages/1/content").asText());
+        assertEquals("/messages/0/content", projection.at("/content_locations/wire-1").asText());
+        assertEquals(1, projection.path("references").size());
+        assertEquals(body, restore(projection, new HashMap<>()));
+    }
+
+    @Test void textStreamAndEmptyContentRemainReadableBeforeTheyRepeat() throws Exception {
+        var dictionary = new WirePayloads();
+        var all = new HashMap<String, JsonNode>();
+        var stream = TraceRedactor.JSON.getNodeFactory().textNode("data: " + "响应片段".repeat(50) + "\n\n");
+        var first = dictionary.project(stream);
+        assertEquals(stream, first.path("body"));
+        assertEquals("", first.at("/content_locations/wire-1").asText());
+        assertEquals(stream, restore(first, all));
+        assertEquals(stream, restore(dictionary.project(stream), all));
+        var empty = TraceRedactor.JSON.readTree("{\"content\":\"\"}");
+        assertEquals(empty, dictionary.project(empty).path("body"));
+    }
+
+    @Test void referenceLocationsCannotInjectMarkdownOrHtml() throws Exception {
+        Path workspace = Files.createDirectory(temp.resolve("escaped-location"));
+        var warnings = new java.util.ArrayList<String>();
+        var trace = ExecutionTrace.open(workspace, "escaped-wire", 128, List.of(), warnings::add);
+        String request = TraceRedactor.JSON.writeValueAsString(Map.of("field\n## 冒充标题<script>", "长内容".repeat(100)));
+        trace.wireRequest(1, 1, "POST", "http://localhost/chat", request);
+        trace.wireRequest(2, 1, "POST", "http://localhost/chat", request);
+        trace.close();
+        String log = Files.readString(trace.path());
+        assertTrue(warnings.isEmpty(), warnings.toString());
+        assertFalse(log.contains("\n## 冒充标题"));
+        assertTrue(log.contains("&lt;script&gt;"));
+    }
+
     static JsonNode restore(ObjectNode projection, Map<String, JsonNode> dictionary) {
-        projection.path("new_content").fields().forEachRemaining(entry -> dictionary.put(entry.getKey(), entry.getValue()));
+        projection.path("content_locations").fields().forEachRemaining(entry ->
+                dictionary.put(entry.getKey(), projection.path("body").at(entry.getValue().asText())));
         JsonNode result = projection.path("body").deepCopy();
         var references = projection.path("references").fields();
         while (references.hasNext()) {
