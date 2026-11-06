@@ -70,6 +70,12 @@ public final class ContextCompactor {
         return List.copyOf(result);
     }
 
+    /** 仅生成单条工具的有界预览，不删除消息或改变工具配对；原始会话保持不变。 */
+    List<ChatMessage> limitToolOutputs(List<ChatMessage> input, int maxChars) {
+        if (maxChars < 1) throw new IllegalArgumentException("maxToolOutputChars 必须为正数");
+        return input.stream().map(message -> compactToolOutput(message, maxChars)).toList();
+    }
+
     /** 所选本地计数策略，不代表厂商计费测量。 */
     public int estimateTokens(List<ChatMessage> messages) {
         int count = tokenCounter.messageTokens(messages);

@@ -33,6 +33,21 @@ class RepositoryMapTest {
         assertTrue(map.execute("{\"max_files\":1}").contains("展示 1/2"));
     }
 
+    @Test void overviewReadsOnlyDisplayedSourceAndListsBuildEntrypoints() throws Exception {
+        Files.writeString(workspace.resolve("README.md"), "不应注入正文的 README 内容");
+        Files.writeString(workspace.resolve("pom.xml"), "<project>不应注入的构建正文</project>");
+        for (int i = 0; i < 120; i++) Files.writeString(workspace.resolve(String.format("Source%03d.java", i)), "class Source" + i + " {}\n");
+        var map = new RepositoryMap(workspace);
+        String first = map.execute("{}");
+        assertTrue(first.contains("README.md")); assertTrue(first.contains("pom.xml"));
+        assertFalse(first.contains("不应注入"));
+        assertTrue(first.contains("展示 20/120"));
+        assertTrue(first.contains("本次读取源码 20"), first);
+        assertTrue(map.execute("{}").contains("本次读取源码 0"));
+        String focused = map.execute("{\"query\":\"Source119\"}");
+        assertTrue(focused.contains("Source119.java"));
+    }
+
     @Test void sourceChangesInvalidateCachedDeclarations() throws Exception {
         Path file = workspace.resolve("A.java");
         Files.writeString(file, "class Old {}\n");

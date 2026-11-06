@@ -26,13 +26,16 @@ public final class RepositoryMap implements Tool {
     private static final Set<String> EXCLUDED = Set.of(".git", ".harness", ".idea", ".codex", ".aws", "target", "build", "dist", "node_modules", "__pycache__");
     private static final Set<String> EXTENSIONS = Set.of("java", "kt", "py", "js", "ts", "tsx", "jsx", "go", "rs", "cs", "cpp", "c", "h");
     private static final Pattern DECLARATION = Pattern.compile("\\b(?:class|interface|enum|record|def|function|struct|trait)\\s+([A-Za-z_$][A-Za-z0-9_$]*)");
+    private static final Set<String> ENTRYPOINTS = Set.of("agents.md", "readme.md", "readme", "pom.xml", "build.gradle",
+            "build.gradle.kts", "settings.gradle", "settings.gradle.kts", "package.json", "pyproject.toml", "cargo.toml", "go.mod", "makefile");
     private static final int CACHE_LIMIT = 2048;
     private final Path root;
     private final Map<Path, Cached> cache = new HashMap<>();
+    private long sourceReads;
     public RepositoryMap(Path workspace) throws IOException { root = workspace.toRealPath(); }
     @Override public boolean isParallelSafeRead() { return true; }
     @Override public ToolDefinition definition() {
-        return new ToolDefinition("repository_map", "获取相关源码路径与主要类型/函数声明，先用地图定位，再用 read_file 分段读取。query 为空时返回小型概览。",
+        return new ToolDefinition("repository_map", "获取相关源码路径与主要类型/函数声明，先用地图定位，再用 read_file 分段读取。query 为空时返回项目说明/构建入口路径及最多 20 个源码位置；只读取展示文件的声明，不扫描全部源码正文。",
                 Map.of("type", "object", "properties", Map.of("query", Map.of("type", "string"),
                         "max_files", Map.of("type", "integer", "minimum", 1, "maximum", 100)),
                         "additionalProperties", false));
@@ -45,7 +48,7 @@ public final class RepositoryMap implements Tool {
             throw new IllegalArgumentException("地图参数包含未知字段");
         if (node.has("query") && !node.get("query").isTextual()) throw new IllegalArgumentException("query 必须为字符串");
         String query = node.path("query").asText("").toLowerCase(Locale.ROOT);
-        int max = 40;
+        int max = 20;
         if (node.has("max_files")) {
             var value = node.get("max_files");
             if (!value.isIntegralNumber() || !value.canConvertToInt()) throw new IllegalArgumentException("max_files 必须为整数");
@@ -54,7 +57,9 @@ public final class RepositoryMap implements Tool {
         if (max < 1 || max > 100 || query.length() > 512) throw new IllegalArgumentException("地图参数超限");
         if (!Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS) || !root.toRealPath().equals(root))
             throw new IOException("工作区不能通过链接或 junction 重定向");
+        long readsBefore = sourceReads;
         List<Entry> candidates = new ArrayList<>();
+        List<String> entrypoints = new ArrayList<>();
         int[] visited = {0};
         boolean[] incomplete = {false};
         long deadline = System.nanoTime() + java.time.Duration.ofSeconds(5).toNanos();
@@ -69,11 +74,15 @@ public final class RepositoryMap implements Tool {
                 interrupted();
                 if (System.nanoTime() > deadline || ++visited[0] > 10000) { incomplete[0] = true; return FileVisitResult.TERMINATE; }
                 String name = file.getFileName().toString();
+                if (query.isBlank() && attrs.isRegularFile() && ENTRYPOINTS.contains(name.toLowerCase(Locale.ROOT)) && safe(file)) {
+                    entrypoints.add(root.relativize(file).toString().replace('\\', '/'));
+                }
                 int dot = name.lastIndexOf('.');
                 if (!attrs.isRegularFile() || attrs.size() > 256_000 || dot < 0
                         || !EXTENSIONS.contains(name.substring(dot + 1).toLowerCase(Locale.ROOT)) || !safe(file)) return FileVisitResult.CONTINUE;
                 String path = root.relativize(file).toString().replace('\\', '/');
-                var symbols = symbols(file, attrs, deadline);
+                // 无查询的概览先按路径选择展示项，再读取少量声明，避免为几十条地图读取整个仓库。
+                var symbols = query.isBlank() ? List.<String>of() : symbols(file, attrs, deadline);
                 if (System.nanoTime() > deadline) { incomplete[0] = true; return FileVisitResult.TERMINATE; }
                 boolean pathMatch = !query.isBlank() && path.toLowerCase(Locale.ROOT).contains(query);
                 boolean symbolMatch = !query.isBlank() && symbols.stream().anyMatch(s -> s.toLowerCase(Locale.ROOT).contains(query));
@@ -89,16 +98,36 @@ public final class RepositoryMap implements Tool {
         });
         candidates.sort(java.util.Comparator.comparingInt(Entry::rank).reversed().thenComparing(Entry::path));
         StringBuilder result = new StringBuilder();
+        if (query.isBlank() && !entrypoints.isEmpty()) {
+            result.append("[项目说明与构建入口，仅路径]\n");
+            entrypoints.sort(java.util.Comparator.comparingLong((String path) -> path.chars().filter(c -> c == '/').count()).thenComparing(path -> path));
+            int entries = 0;
+            for (String path : entrypoints) {
+                if (++entries > 20 || result.length() + path.length() > 1600) break;
+                result.append(path).append('\n');
+            }
+            result.append("[源码定位，按需抽样阅读]\n");
+        }
         int shown = 0;
         for (Entry entry : candidates) {
             if (shown == max || result.length() > 7500) break;
-            String row = entry.path + (entry.symbols.isEmpty() ? "" : " — " + String.join(", ", entry.symbols)) + "\n";
+            var declarations = entry.symbols;
+            if (query.isBlank()) {
+                Path file = root.resolve(entry.path);
+                if (!safe(file)) { incomplete[0] = true; continue; }
+                if (System.nanoTime() <= deadline) {
+                    try {
+                        declarations = symbols(file, Files.readAttributes(file, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS), deadline);
+                    } catch (IOException changed) { incomplete[0] = true; }
+                } else incomplete[0] = true;
+            }
+            String row = entry.path + (declarations.isEmpty() ? "" : " — " + String.join(", ", declarations)) + "\n";
             if (result.length() + row.length() > 8000) break;
             result.append(row); shown++;
         }
         if (candidates.isEmpty()) result.append("未找到相关源码声明。\n");
         result.append("[地图仅含路径与声明，不替代正文；展示 ").append(shown).append('/').append(candidates.size())
-                .append("；扫描文件 ").append(visited[0]).append(incomplete[0] ? "；扫描达到预算或存在不可读路径" : "").append("]");
+                .append("；本次读取源码 ").append(sourceReads - readsBefore).append("；扫描文件 ").append(visited[0]).append(incomplete[0] ? "；扫描达到预算或存在不可读路径" : "").append("]");
         return result.toString();
     }
     private List<String> symbols(Path file, BasicFileAttributes attrs, long deadline) throws IOException {
@@ -109,6 +138,7 @@ public final class RepositoryMap implements Tool {
         if (Thread.currentThread().isInterrupted() || System.nanoTime() > deadline) return List.of();
         byte[] bytes;
         try (var input = java.nio.channels.FileChannel.open(file, java.nio.file.StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)) {
+            sourceReads++;
             if (input.size() > 256_000) return List.of();
             var buffer = java.nio.ByteBuffer.allocate((int) input.size());
             while (buffer.hasRemaining()) {

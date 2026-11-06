@@ -1,0 +1,12 @@
+{
+  "verifiedAt": "2026-11-06T07:18:00.572Z",
+  "launcher": "C:/Users/Admin/AppData/Local/YLCoder-harness/bin/ylc.cmd",
+  "runtime": "C:/Users/Admin/AppData/Local/YLCoder-harness/lib/ylc-6291cd90821e71f31f1bb770ee5d277215200215d8a5cf165bdbb9cc32ad9cea.jar",
+  "jarSha256": "6291cd90821e71f31f1bb770ee5d277215200215d8a5cf165bdbb9cc32ad9cea",
+  "matchesTestedJar": true,
+  "versionCommand": "ylc.cmd --version",
+  "versionOutput": "YLCoder-harness 0.1.0",
+  "versionExitCode": 0,
+  "existingConfigPreserved": true,
+  "realModelRequests": 0
+}

@@ -1,0 +1,12 @@
+{
+  "description": "在修复前的 ContextManager 源码上加入当前三项针对性回归测试",
+  "suite": "ContextManagerTest",
+  "tests": 9,
+  "failures": 3,
+  "errors": 0,
+  "failedCases": [
+    "acceptsUsefulSummaryWhenLatestToolGroupAloneExceedsTargetButFitsBudget",
+    "appliesPerToolOutputLimitBeforeDecidingToPayForSummary",
+    "summarizesLargeToolHistoryEvenWithOnlyTwoOrThreeUserTurns"
+  ]
+}

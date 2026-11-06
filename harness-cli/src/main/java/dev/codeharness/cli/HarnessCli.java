@@ -843,6 +843,7 @@ public final class HarnessCli implements Callable<Integer> {
             if (interactiveMode) input().startTaskInput();
             result = taskAgent.resume(history, runtime.options, new AgentListener() {
             private boolean contextRestored;
+            private final ContextNotice contextNotice = new ContextNotice();
             private void live(int iteration, String phase) {
                 if (interactiveMode) ui().live(usageDashboard.task(), usageDashboard.process(),
                         runtime.reviewer == null ? new CommandReview.Stats(0, 0, 0, 0, TokenUsage.ZERO, 0) : runtime.reviewer.stats(),
@@ -855,9 +856,9 @@ public final class HarnessCli implements Callable<Integer> {
             }
             @Override public void onContext(ContextMetrics metrics) {
                 runtime.trace.context(metrics);
-                if (!quiet && !json && (metrics.summarizedMessages() > 0 || metrics.degraded())) {
+                if (!quiet && !json && contextNotice.shouldShow(metrics)) {
                     ui().beforeOutput();
-                    out().printf("  上下文：%,d → %,d token · %s%n", metrics.beforeTokens(), metrics.afterTokens(), metrics.reason());
+                    out().printf("  本次上下文整理：%,d → %,d token（本地估算）· %s%n", metrics.beforeTokens(), metrics.afterTokens(), metrics.reason());
                     out().flush();
                 }
             }

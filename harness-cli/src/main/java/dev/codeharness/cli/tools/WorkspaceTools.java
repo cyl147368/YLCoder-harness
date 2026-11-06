@@ -279,12 +279,12 @@ public final class WorkspaceTools {
 
     private final class ReadFile implements Tool {
         @Override public boolean isParallelSafeRead() { return true; }
-        public ToolDefinition definition() { return WorkspaceTools.this.definition("read_file", "读取文本文件，可指定行范围。", Map.of("path", stringProp("相对于工作区的文件"), "start_line", Map.of("type", "integer"), "end_line", Map.of("type", "integer")), "path"); }
+        public ToolDefinition definition() { return WorkspaceTools.this.definition("read_file", "读取文本文件，默认返回起始处的 100 行；明确需要时用 start_line/end_line 指定更大范围。", Map.of("path", stringProp("相对于工作区的文件"), "start_line", Map.of("type", "integer"), "end_line", Map.of("type", "integer")), "path"); }
         public String execute(String input) throws Exception {
             checkReadInterrupted();
             JsonNode node = args(input);
             int start = lineNumber(node, "start_line", 1);
-            int end = lineNumber(node, "end_line", (int) Math.min(Integer.MAX_VALUE, (long) start + 299));
+            int end = lineNumber(node, "end_line", (int) Math.min(Integer.MAX_VALUE, (long) start + 99));
             if (start < 1 || end < start) throw new IllegalArgumentException("行范围必须为正数且起止有序");
             Path file = resolve(required(node, "path"), false);
             if (!Files.isRegularFile(file) || Files.size(file) > 1_000_000) throw new IllegalArgumentException("文件必须是可读的普通文件，且小于 1 MB");
@@ -295,6 +295,9 @@ public final class WorkspaceTools {
                 checkReadInterrupted();
                 output.append(i + ": " + lines.get(i - 1) + "\n");
                 if (output.truncated()) break;
+            }
+            if (!node.has("end_line") && end < lines.size() && !output.truncated()) {
+                output.append("[已读 " + start + "-" + end + "/" + lines.size() + " 行；需要后续内容时指定 start_line=" + (end + 1) + "，无需为概览读完整个文件]\n");
             }
             return preview("workspace_query", output);
         }

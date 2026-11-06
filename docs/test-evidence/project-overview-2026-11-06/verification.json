@@ -1,0 +1,118 @@
+{
+  "verifiedAt": "2026-11-06T07:18:00.571Z",
+  "command": "mvn -o -s target/maven-review-settings.xml verify",
+  "status": "BUILD SUCCESS",
+  "totals": {
+    "tests": 925,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 16,
+    "passed": 909
+  },
+  "modules": [
+    {
+      "module": "harness-core",
+      "tests": 66,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "harness-providers",
+      "tests": 132,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "harness-cli",
+      "tests": 727,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 16
+    }
+  ],
+  "skips": [
+    {
+      "suite": "dev.codeharness.cli.approval.CommandReviewTest",
+      "case": "symlinkWorkspaceAndFileWorkspaceNeverReachModel",
+      "reason": "当前 Windows 账号未获符号链接创建权限"
+    },
+    {
+      "suite": "dev.codeharness.cli.approval.MavenBuildExecutionTest",
+      "case": "项目配置文件链接到外部时不能交审核模型放行",
+      "reason": "当前 Windows 账号未获符号链接创建权限"
+    },
+    {
+      "suite": "dev.codeharness.cli.SessionStoreTest",
+      "case": "checkpointsAndLocksUsePrivatePosixPermissions",
+      "reason": "当前 Windows 环境不支持 POSIX 权限"
+    },
+    {
+      "suite": "dev.codeharness.cli.SessionStoreTest",
+      "case": "rejectsSymlinkCheckpointAndLockFile",
+      "reason": "当前 Windows 账号未获符号链接创建权限"
+    },
+    {
+      "suite": "dev.codeharness.cli.tools.NativeReadOnlyQueryTest",
+      "case": "excludesSymlinksEvenWhenTheirTargetsAreInsideWorkspace",
+      "reason": "当前 Windows 账号未获符号链接创建权限"
+    },
+    {
+      "suite": "dev.codeharness.cli.tools.NativeSearchExecutionTest",
+      "case": "符号链接目录及文件不会进入正文查询",
+      "reason": "当前 Windows 账号未获符号链接创建权限"
+    },
+    {
+      "suite": "dev.codeharness.cli.tools.RepositoryMapTest",
+      "case": "linkAndRedirectedRootDoNotExposeDeclarations",
+      "reason": "当前 Windows 账号未获符号链接创建权限"
+    },
+    {
+      "suite": "dev.codeharness.cli.tools.WhereReadOnlyQueryTest",
+      "case": "跳过符号链接文件和目录",
+      "reason": "当前 Windows 账号未获符号链接创建权限"
+    },
+    {
+      "suite": "dev.codeharness.cli.tools.WorkspaceToolsTest",
+      "case": "editRejectsTraversalAndSymlinkTargets",
+      "reason": "当前 Windows 账号未获符号链接创建权限"
+    },
+    {
+      "suite": "dev.codeharness.cli.tools.WorkspaceToolsTest",
+      "case": "refusesWritingThroughEscapingDirectorySymlinks",
+      "reason": "当前 Windows 账号未获符号链接创建权限"
+    },
+    {
+      "suite": "dev.codeharness.cli.tools.WorkspaceToolsTest",
+      "case": "doesNotReadOrSearchOutsideSymlinks",
+      "reason": "当前 Windows 账号未获符号链接创建权限"
+    },
+    {
+      "suite": "dev.codeharness.cli.tools.WorkspaceToolsTest",
+      "case": "atomicWritesAndEditsPreservePosixExecutableBits",
+      "reason": "当前 Windows 环境不支持 POSIX 权限"
+    },
+    {
+      "suite": "dev.codeharness.cli.trace.ExecutionTraceTest",
+      "case": "refusesSymlinkLogsAndDoesNotTouchDestination",
+      "reason": "当前 Windows 账号未获符号链接创建权限"
+    },
+    {
+      "suite": "dev.codeharness.cli.trace.ToolOutputArchiveTest",
+      "case": "redirectedDirectoryIsRejectedAndNoOutsideWriteOccurs",
+      "reason": "当前 Windows 账号未获符号链接创建权限"
+    },
+    {
+      "suite": "dev.codeharness.cli.TraceFilesTest",
+      "case": "linkedLogsRootIsRejected",
+      "reason": "当前 Windows 账号未获符号链接创建权限"
+    },
+    {
+      "suite": "dev.codeharness.cli.TraceFilesTest",
+      "case": "linkedSessionAndLogCannotExposeAnotherDirectory",
+      "reason": "当前 Windows 账号未获符号链接创建权限"
+    }
+  ],
+  "jarSha256": "6291cd90821e71f31f1bb770ee5d277215200215d8a5cf165bdbb9cc32ad9cea"
+}

@@ -13,6 +13,7 @@ class TaskIntentTest {
         assertEquals(TaskIntent.Mode.CHAT, mode("你好"));
         assertEquals(TaskIntent.Mode.ANALYZE, mode("看下当前项目的优缺点"));
         assertEquals(TaskIntent.Mode.PLAN, mode("先给我修复方案"));
+        assertEquals(TaskIntent.Mode.ANALYZE, mode("看一下当前项目"));
         assertEquals(TaskIntent.Mode.EDIT, mode("可以，开始实现吧"));
         assertEquals(TaskIntent.Mode.EXECUTE, mode("运行测试"));
         assertEquals(TaskIntent.Mode.AUTO, mode("这个东西"));

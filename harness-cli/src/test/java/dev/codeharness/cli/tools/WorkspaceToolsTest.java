@@ -393,4 +393,15 @@ class WorkspaceToolsTest {
             Thread.sleep(30_000);
         }
     }
+
+    @Test void defaultReadIsSmallAndCanBeExpandedExplicitly() throws Exception {
+        var registry = tools();
+        String text = java.util.stream.IntStream.rangeClosed(1, 350).mapToObj(i -> "row-" + i + "\n").collect(java.util.stream.Collectors.joining());
+        Files.writeString(temporary.resolve("workspace/overview.txt"), text);
+        String first = execute(registry, "read_file", Map.of("path", "overview.txt"));
+        assertTrue(first.contains("100: row-100\n")); assertFalse(first.contains("101: row-101"));
+        assertTrue(first.contains("start_line=101"));
+        String explicit = execute(registry, "read_file", Map.of("path", "overview.txt", "start_line", 90, "end_line", 120));
+        assertTrue(explicit.contains("120: row-120")); assertFalse(explicit.contains("121: row-121"));
+    }
 }

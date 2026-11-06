@@ -1,0 +1,50 @@
+{
+  "timestamp": "2026-11-06T07:15:09.754687+00:00",
+  "network": "仅127.0.0.1模拟API，无真实厂商调用",
+  "rows": [
+    {
+      "protocol": "chat",
+      "malformed_summary": false,
+      "status": "passed",
+      "summary_requests": 6,
+      "requests": 13,
+      "first_run_ms": 1850.62,
+      "resume_new_jvm_ms": 1484.88,
+      "archive_run_ms": 1662.78,
+      "archive_files": 1
+    },
+    {
+      "protocol": "chat",
+      "malformed_summary": true,
+      "status": "passed",
+      "summary_requests": 1,
+      "requests": 7,
+      "first_run_ms": 2008.23,
+      "resume_new_jvm_ms": null,
+      "archive_run_ms": 1758.08,
+      "archive_files": 1
+    },
+    {
+      "protocol": "responses",
+      "malformed_summary": false,
+      "status": "passed",
+      "summary_requests": 6,
+      "requests": 13,
+      "first_run_ms": 1928.35,
+      "resume_new_jvm_ms": 1666.86,
+      "archive_run_ms": 1626.7,
+      "archive_files": 1
+    },
+    {
+      "protocol": "responses",
+      "malformed_summary": true,
+      "status": "passed",
+      "summary_requests": 1,
+      "requests": 7,
+      "first_run_ms": 1811.41,
+      "resume_new_jvm_ms": null,
+      "archive_run_ms": 1510.75,
+      "archive_files": 1
+    }
+  ]
+}

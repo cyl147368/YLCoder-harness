@@ -1,0 +1,169 @@
+{
+  "timestamp": "2026-11-06T07:11:31.383839+00:00",
+  "network": "仅本地模拟厂商；没有真实模型调用",
+  "method": "固定模拟回复驱动真实CLI和工具；本地utf16估算包含消息，工具结构已从预算扣除；未模拟模型自主探索质量",
+  "jar_sha256": "7d4e6c9863386f14b40a28317acece43ba7d936239f670f4e445912cdada52b3",
+  "legacy_baseline": true,
+  "rows": [
+    {
+      "protocol": "chat",
+      "scenario": "新会话查看1200文件项目",
+      "status": "passed",
+      "main_requests": 5,
+      "summary_requests": 0,
+      "tool_calls": 4,
+      "local_trim_requests": 0,
+      "visible_context_notices": 0,
+      "context_message_estimates": [
+        {
+          "before": 327,
+          "after": 327,
+          "budget": 49120
+        },
+        {
+          "before": 748,
+          "after": 748,
+          "budget": 49120
+        },
+        {
+          "before": 3562,
+          "after": 3562,
+          "budget": 49120
+        },
+        {
+          "before": 5212,
+          "after": 5212,
+          "budget": 49120
+        },
+        {
+          "before": 7404,
+          "after": 7404,
+          "budget": 49120
+        }
+      ],
+      "summarized_messages": 0,
+      "history_preserved": true,
+      "elapsed_ms": 2433.87
+    },
+    {
+      "protocol": "chat",
+      "scenario": "少量用户轮次和约八万token工具历史",
+      "status": "passed",
+      "main_requests": 5,
+      "summary_requests": 0,
+      "tool_calls": 4,
+      "local_trim_requests": 5,
+      "visible_context_notices": 5,
+      "context_message_estimates": [
+        {
+          "before": 85104,
+          "after": 48801,
+          "budget": 49120
+        },
+        {
+          "before": 85525,
+          "after": 43168,
+          "budget": 49120
+        },
+        {
+          "before": 88339,
+          "after": 45982,
+          "budget": 49120
+        },
+        {
+          "before": 89989,
+          "after": 47632,
+          "budget": 49120
+        },
+        {
+          "before": 92181,
+          "after": 43770,
+          "budget": 49120
+        }
+      ],
+      "summarized_messages": 0,
+      "history_preserved": true,
+      "elapsed_ms": 2671.92
+    },
+    {
+      "protocol": "responses",
+      "scenario": "新会话查看1200文件项目",
+      "status": "passed",
+      "main_requests": 5,
+      "summary_requests": 0,
+      "tool_calls": 4,
+      "local_trim_requests": 0,
+      "visible_context_notices": 0,
+      "context_message_estimates": [
+        {
+          "before": 327,
+          "after": 327,
+          "budget": 49120
+        },
+        {
+          "before": 846,
+          "after": 846,
+          "budget": 49120
+        },
+        {
+          "before": 3760,
+          "after": 3760,
+          "budget": 49120
+        },
+        {
+          "before": 5509,
+          "after": 5509,
+          "budget": 49120
+        },
+        {
+          "before": 7802,
+          "after": 7802,
+          "budget": 49120
+        }
+      ],
+      "summarized_messages": 0,
+      "history_preserved": true,
+      "elapsed_ms": 16511.23
+    },
+    {
+      "protocol": "responses",
+      "scenario": "少量用户轮次和约八万token工具历史",
+      "status": "passed",
+      "main_requests": 5,
+      "summary_requests": 0,
+      "tool_calls": 4,
+      "local_trim_requests": 5,
+      "visible_context_notices": 5,
+      "context_message_estimates": [
+        {
+          "before": 85104,
+          "after": 48801,
+          "budget": 49120
+        },
+        {
+          "before": 85620,
+          "after": 43263,
+          "budget": 49120
+        },
+        {
+          "before": 88533,
+          "after": 46176,
+          "budget": 49120
+        },
+        {
+          "before": 90282,
+          "after": 47925,
+          "budget": 49120
+        },
+        {
+          "before": 92576,
+          "after": 44165,
+          "budget": 49120
+        }
+      ],
+      "summarized_messages": 0,
+      "history_preserved": true,
+      "elapsed_ms": 6625.15
+    }
+  ]
+}
