@@ -12,6 +12,21 @@ public final class ConfigLoader {
 
     private ConfigLoader() {}
 
+    /** 读取用户配置中的 permissions.disable-allow-all；文件缺失或无法解析时按未禁用处理，由正常加载流程报告错误。 */
+    public static boolean userDisablesAllowAll() {
+        return userDisablesAllowAll(Path.of(System.getProperty("user.home"), ".code-harness/config.yaml"));
+    }
+
+    static boolean userDisablesAllowAll(Path user) {
+        if (!Files.isRegularFile(user)) return false;
+        try {
+            var root = YAML.readTree(user.toFile());
+            return root != null && root.path("permissions").path("disable-allow-all").asBoolean(false);
+        } catch (IOException | RuntimeException ignored) {
+            return false;
+        }
+    }
+
     public static HarnessConfig load(Path workingDirectory, Path explicitFile) throws IOException {
         return load(workingDirectory, explicitFile, false);
     }

@@ -105,19 +105,33 @@ class TerminalInputWorkflowTest {
     }
 
     @Test void disablingReviewRestoresManualApprovalAndFullAllowStillOverrides() throws Exception {
+        String oldHome = System.getProperty("user.home");
+        // allow-all 确认会写入用户目录下的标记文件；隔离到临时目录，避免污染真实用户配置。
+        System.setProperty("user.home", java.nio.file.Files.createTempDirectory("allow-all-home").toString());
+        try {
         for (boolean fullAllow : List.of(false, true)) {
-            FakeInput input = fullAllow ? new FakeInput(true, FIRST, SECOND, "/exit")
+            FakeInput input = fullAllow ? new FakeInput(true, "yes", FIRST, SECOND, "/exit")
                     : new FakeInput(true, FIRST, "y", SECOND, "/exit");
             try (Provider fixture = new Provider(true, true, safeDirectoryCommand())) {
                 Outcome outcome = execute(input, fixture, fullAllow
                         ? new String[]{"--no-auto-review", "--allow-commands"} : new String[]{"--no-auto-review"});
                 assertEquals(0, outcome.code, outcome.err);
-                assertEquals(fullAllow ? 3 : 4, input.reads);
+                assertEquals(4, input.reads);
                 assertEquals(!fullAllow, outcome.err.contains("[y/N]"));
                 assertTrue(fixture.reviews.isEmpty());
                 assertWorkflow(fixture, true);
             }
         }
+        // 已确认过的 allow-all 不再询问：不输入 yes，读取次数少一次。
+        assertTrue(java.nio.file.Files.isRegularFile(HarnessCli.allowAllMarker()));
+        FakeInput remembered = new FakeInput(true, FIRST, SECOND, "/exit");
+        try (Provider fixture = new Provider(true, true, safeDirectoryCommand())) {
+            Outcome outcome = execute(remembered, fixture, new String[]{"--no-auto-review", "--allow-commands"});
+            assertEquals(0, outcome.code, outcome.err);
+            assertEquals(3, remembered.reads);
+            assertFalse(outcome.err.contains("输入 yes"));
+        }
+        } finally { System.setProperty("user.home", oldHome); }
     }
 
     @Test void nativeQueryBypassesReviewWithoutConsumingTheNextTask() throws Exception {

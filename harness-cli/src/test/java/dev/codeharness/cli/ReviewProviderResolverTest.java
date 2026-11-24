@@ -177,7 +177,7 @@ class ReviewProviderResolverTest {
     }
 
     @Test void 旧布尔配置保持原有优先级且显式模式优先() {
-        assertEquals("review", config.permissions.effectiveMode());
+        assertEquals("auto", config.permissions.effectiveMode());
         config.permissions.autoReview = false;
         assertEquals("manual", config.permissions.effectiveMode());
         config.permissions.allowCommands = true;
@@ -185,7 +185,7 @@ class ReviewProviderResolverTest {
         config.permissions.mode = "manual";
         assertEquals("manual", config.permissions.effectiveMode());
         config.permissions.mode = "REVIEW";
-        assertEquals("review", config.permissions.effectiveMode());
+        assertEquals("auto", config.permissions.effectiveMode());
         config.permissions.mode = "unsupported-secret";
         assertSanitized(assertThrows(IllegalArgumentException.class, config.permissions::effectiveMode), "unsupported-secret");
     }

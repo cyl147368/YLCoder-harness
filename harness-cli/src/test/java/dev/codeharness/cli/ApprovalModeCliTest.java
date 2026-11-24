@@ -185,6 +185,55 @@ class ApprovalModeCliTest {
         } finally { main.stop(0); }
     }
 
+    @Test void 交互中切换到allowAll需要显式参数并遵守禁用开关() throws Exception {
+        var requests = new CopyOnWriteArrayList<JsonNode>();
+        HttpServer main = mainServer("pwd", requests);
+        String oldHome = System.getProperty("user.home");
+        try {
+            Path config = config(main, "permissions:\n  mode: manual\n");
+            Path home = Files.createDirectories(temporary.resolve("allow-all-home"));
+            System.setProperty("user.home", home.toString());
+            Files.createDirectories(HarnessCli.allowAllMarker().getParent());
+            Files.writeString(HarnessCli.allowAllMarker(), "confirmed\n");
+
+            String withoutFlag = interact(config, List.of("/approval allow-all", "/status", "/exit"));
+            assertTrue(withoutFlag.contains("allow-all 需用启动参数显式选择"), withoutFlag);
+            assertFalse(withoutFlag.contains("完全访问"), withoutFlag);
+
+            String withFlag = interact(config, List.of("/approval allow-all", "/status", "/exit"),
+                    "--allow-dangerously-skip-permissions");
+            assertTrue(withFlag.contains("命令审核模式：allow-all"), withFlag);
+            assertTrue(withFlag.contains("完全访问"), withFlag);
+
+            Path userConfig = home.resolve(".code-harness").resolve("config.yaml");
+            Files.writeString(userConfig, "permissions:\n  disable-allow-all: true\n");
+            String disabled = interact(config, List.of("/approval allow-all", "/status", "/exit"),
+                    "--allow-dangerously-skip-permissions");
+            assertTrue(disabled.contains("不能切换到 allow-all"), disabled);
+            assertTrue(disabled.contains("命令审核模式：auto"), disabled);
+            assertTrue(requests.isEmpty());
+        } finally {
+            System.setProperty("user.home", oldHome);
+            main.stop(0);
+        }
+    }
+
+    private String interact(Path config, List<String> commands, String... extra) {
+        var lines = commands.iterator();
+        TerminalInput input = new TerminalInput() {
+            public String readLine() { return lines.hasNext() ? lines.next() : null; }
+            public boolean isTerminal() { return false; }
+        };
+        var cli = new CommandLine(new HarnessCli(input));
+        StringWriter out = new StringWriter(), err = new StringWriter();
+        cli.setOut(new PrintWriter(out, true)).setErr(new PrintWriter(err, true));
+        var args = new java.util.ArrayList<>(List.of("--workspace", temporary.toString(), "--config", config.toString(),
+                "--no-stream", "--quiet", "--no-color"));
+        args.addAll(List.of(extra));
+        assertEquals(0, cli.execute(args.toArray(String[]::new)), err.toString());
+        return out.toString();
+    }
+
     @Test void 快捷键由交互循环消费并在下一次读取恢复草稿而不请求模型() throws Exception {
         var requests = new CopyOnWriteArrayList<JsonNode>();
         HttpServer main = mainServer("pwd", requests);
@@ -213,7 +262,7 @@ class ApprovalModeCliTest {
             assertEquals(0, cli.execute("--workspace", temporary.toString(), "--config", config.toString(),
                     "--no-stream", "--quiet", "--no-color"), err.toString());
             assertEquals(3, input.read);
-            assertTrue(out.toString().contains("命令审核模式已切换为 review"));
+            assertTrue(out.toString().contains("命令审核模式已切换为 auto"));
             assertTrue(out.toString().contains("审核模式"));
             assertTrue(requests.isEmpty(), "快捷键与状态查询不能请求模型");
             assertTrue(new SessionStore(temporary).recent(20).isEmpty(), "切换不能生成任务检查点");

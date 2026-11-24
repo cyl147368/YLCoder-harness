@@ -27,6 +27,15 @@ final class ReviewableShell {
             "shutdown", "reboot", "mount", "umount", "useradd", "passwd", "sudo", "su", "eval",
             "exec", "source", "set", "export", "xargs", "awk", "perl", "ruby", "php", "pytest",
             "date", "get-date");
+    /** 审核路径只接受已知只读程序；名单外的命令一律转人工，不交给分类器猜测语义。 */
+    private static final Set<String> CLASSIFIER_COMMANDS = Set.of(
+            "git", "rg", "grep", "find", "sed", "sort", "uniq", "cat", "diff", "file", "stat", "tree",
+            "ls", "wc", "head", "tail", "echo", "pwd");
+    /** 只允许打印、删除、退出、行号和不带 w/e 标志的替换命令。 */
+    private static final Pattern SED_SIMPLE = Pattern.compile("([0-9]+(,[0-9]+)?)?[pdq=]");
+    private static final Pattern SED_SUBSTITUTE = Pattern.compile(
+            "([0-9]+(,[0-9]+)?)?s(.)((?:(?!\\3).)*)\\3((?:(?!\\3).)*)\\3[gpI0-9]*");
+    private static final Set<String> CLASSIFIER_GIT_TEXT_OPERATIONS = Set.of("log", "diff", "blame", "grep");
 
     record Segment(List<String> words, boolean discardStandardError, boolean mergeStandardError) {
         Segment { words = List.copyOf(words); }
@@ -280,6 +289,7 @@ final class ReviewableShell {
             }
             String name = executableName(words.getFirst());
             if (DANGEROUS_COMMANDS.contains(name)) return false;
+            if (!CLASSIFIER_COMMANDS.contains(name)) return false;
             if (!words.getFirst().matches("[A-Za-z][A-Za-z0-9_-]*")) return false;
             // 已知命令的路径/参数安全失败不能经 AI 兜底洗成可执行计划。
             if (Set.of("ls", "wc", "head", "tail", "echo").contains(name) && !safeSegment(words)) return false;
@@ -287,11 +297,20 @@ final class ReviewableShell {
                     && ReadOnlyQuery.git(join(words)) == null) return false;
             if (name.equals("git") && !safeClassifierGit(words)) return false;
             if (name.equals("find") && words.stream().anyMatch(word -> Set.of(
-                    "-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fprintf", "-fls",
+                    "-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fprint0", "-fprintf", "-fls",
                     "-L", "-H", "-follow").contains(word)))
                 return false;
-            if (name.equals("sed") && words.stream().anyMatch(word -> word.equals("-i")
-                    || word.startsWith("-i") || word.equals("--in-place"))) return false;
+            if (name.equals("sed") && !safeSed(words)) return false;
+            if (name.equals("sort") && words.stream().anyMatch(word -> word.startsWith("-o")
+                    || word.startsWith("--output") || word.startsWith("--compress-program")
+                    || word.startsWith("--files0-from"))) return false;
+            if (name.equals("uniq") && words.subList(1, words.size()).stream()
+                    .filter(word -> !word.startsWith("-")).count() > 1) return false;
+            if (name.equals("tree") && words.stream().anyMatch(word -> word.equals("-o")
+                    || word.startsWith("--output"))) return false;
+            if (name.equals("file") && words.stream().anyMatch(word -> word.equals("-C")
+                    || word.equals("--compile") || word.equals("-m") || word.startsWith("--magic-file")))
+                return false;
             if (name.equals("rg") && words.stream().anyMatch(word -> word.equals("--pre")
                     || word.startsWith("--pre=") || word.equals("--pre-glob")
                     || word.startsWith("--pre-glob=") || word.equals("--follow")
@@ -311,6 +330,49 @@ final class ReviewableShell {
         return name.endsWith(".exe") ? name.substring(0, name.length() - 4) : name;
     }
 
+    /**
+     * sed 脚本可写文件（w/W）、读文件（r/R）或执行命令（e、s///e），这里只接受可完整识别的只读脚本。
+     */
+    static boolean safeSed(List<String> words) {
+        boolean script = false;
+        for (int index = 1; index < words.size(); index++) {
+            String word = words.get(index);
+            if (Set.of("-n", "-E", "-r", "-s", "--quiet", "--silent", "--regexp-extended").contains(word)) continue;
+            if (word.equals("-e") || word.equals("--expression")) {
+                if (index + 1 >= words.size() || !safeSedScript(words.get(++index))) return false;
+                script = true;
+                continue;
+            }
+            if (word.startsWith("-")) return false;
+            if (!script) {
+                if (!safeSedScript(word)) return false;
+                script = true;
+            }
+        }
+        return script;
+    }
+
+    private static boolean safeSedScript(String script) {
+        if (script.isEmpty() || script.contains("\n")) return false;
+        for (String part : script.split(";", -1)) {
+            String command = part.strip();
+            if (!SED_SIMPLE.matcher(command).matches() && !SED_SUBSTITUTE.matcher(command).matches()) return false;
+        }
+        return true;
+    }
+
+    /** 审核路径的 Git 文本查询强制关闭 textconv 和外部 diff，避免仓库本地配置启动外部程序。 */
+    static List<String> classifierGitOperation(List<String> operation) {
+        if (operation.isEmpty() || !CLASSIFIER_GIT_TEXT_OPERATIONS.contains(operation.getFirst())) return operation;
+        var safe = new ArrayList<String>(operation);
+        if (operation.getFirst().equals("grep") || operation.getFirst().equals("blame")) {
+            safe.add(1, "--no-textconv");
+        } else {
+            safe.addAll(1, List.of("--no-ext-diff", "--no-textconv"));
+        }
+        return safe;
+    }
+
     private static boolean safeClassifierGit(List<String> words) {
         if (words.size() < 2) return false;
         String operation = words.get(1).toLowerCase(Locale.ROOT);
@@ -320,7 +382,8 @@ final class ReviewableShell {
         return words.stream().noneMatch(word -> word.equals("-C") || word.equals("-c")
                 || word.startsWith("--git-dir") || word.startsWith("--work-tree")
                 || word.startsWith("--output") || word.startsWith("--open-files-in-pager")
-                || word.equals("-O") || word.equals("--ext-diff") || word.equals("--textconv"));
+                || word.equals("-O") || word.equals("--ext-diff") || word.equals("--textconv")
+                || word.equals("--filters") || word.startsWith("--exec") || word.startsWith("--upload-pack"));
     }
 
     private ReviewableShell() {}

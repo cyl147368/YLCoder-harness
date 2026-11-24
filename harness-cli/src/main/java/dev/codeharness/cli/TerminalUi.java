@@ -24,7 +24,7 @@ final class TerminalUi implements AutoCloseable {
     private String provider = "";
     private String model = "";
     private String host = "";
-    private String approvalMode = "review";
+    private String approvalMode = "auto";
     private BottomStatusBar bottom;
     private UsageDashboard.Snapshot currentTask = UsageDashboard.Snapshot.empty("current-task");
     private UsageDashboard.Snapshot currentProcess = UsageDashboard.Snapshot.empty("current-process");
@@ -69,10 +69,14 @@ final class TerminalUi implements AutoCloseable {
     void welcome(Path workspace, String provider, String model, String session) {
         connection(provider, model, host);
         out.println();
-        out.println("  " + style("1;36", "ylc") + "  " + style("90", "YLCoder-harness · " + brief(safe(workspace.toString()), 48)));
-        out.println("  " + style("36", "/project") + "  " + style("36", "/model") + "  " + style("36", "/status") + "  "
-                + style("36", "/resume") + "  " + style("36", "/help") + "  " + style("36", "/exit"));
-        out.println("  " + style("90", "Esc 停下 · Esc Esc 回退对话 · Tab 补全 · Shift+Tab / Alt+M 切换审核"));
+        out.println("  " + style("1;35", "◆") + " " + style("1", "ylc") + "  " + style("90", "YLCoder-harness"));
+        out.println("    " + style("90", brief(safe(workspace.toString()), 72)));
+        out.println();
+        var commands = new StringBuilder();
+        for (String command : new String[] {"/project", "/model", "/status", "/resume", "/help", "/exit"})
+            commands.append("  ").append(style("36", command));
+        out.println("  " + style("90", "命令") + commands);
+        out.println("  " + style("90", "按键  Esc 停下 · Esc Esc 回退 · Tab 补全 · Shift+Tab 切换审核"));
         out.println();
         out.flush();
     }
@@ -160,29 +164,40 @@ final class TerminalUi implements AutoCloseable {
     void help(boolean saved, String session) {
         beforeOutput();
         section(out, "帮助");
-        out.println("  /project  查看本地项目概览，不调用模型");
-        out.println("  /model    打开模型列表；也可输入 /model 序号 或 /model 模型名直接切换");
-        out.println("  /status   查看连接、工作区、进程累计用量和完整会话 ID");
-        out.println("  /resume   列出历史会话；/resume 序号或会话ID 切换后继续输入任务");
-        out.println("  /history  查看最近历史；/history 页码 翻页，/history all 查看全部");
-        out.println("  /logs     查看当前会话的提示词、模型回复和工具执行记录文件，不调用模型");
-        out.println("  /rewind   选择回退点；/rewind 序号 在当前会话回到该提问之前（不撤销文件）");
-        out.println("  /history previous  查看最近一次回退前的历史快照，不调用模型");
-        out.println("  /approval 切换 review/manual；也可指定 /approval review 或 /approval manual");
-        out.println("  /intent   查看意图；用 auto/chat/analyze/plan/edit/execute 指定下一项任务的分流模式");
-        out.println("  Shift+Tab（备用 Alt+M）在任务输入框切换审核模式，保留草稿；审批框和任务运行中不切换");
-        out.println("  Esc       取消当前任务但保留会话；输入时清空草稿；500 毫秒内连按两次打开回退选择");
-        out.println("  Tab       补全斜杠命令及参数；支持方向键编辑输入");
-        out.println("  /stream   查看流式状态；/stream off 关闭，/stream on 开启");
-        out.println("  /help     显示帮助");
-        out.println("  /exit     退出");
-        out.println("  Ctrl+C    中断当前任务并退出会话，保留已保存的记录");
+        helpGroup("查看");
+        helpRow("/project", "本地项目概览，不调用模型");
+        helpRow("/status", "连接、工作区、进程累计用量和完整会话 ID");
+        helpRow("/logs", "提示词、模型回复和工具执行记录文件");
+        helpRow("/stream", "流式状态；/stream on|off 切换");
+        helpGroup("会话");
+        helpRow("/resume", "历史会话；/resume 序号或会话ID 切换");
+        helpRow("/history", "最近历史；页码翻页，all 全部，previous 回退前快照");
+        helpRow("/rewind", "回到某次提问之前（不撤销文件）");
+        helpGroup("设置");
+        helpRow("/model", "模型列表；/model 序号|模型名 直接切换");
+        helpRow("/approval", "审核模式 auto|manual");
+        helpRow("/intent", "下一项任务的分流：auto/chat/analyze/plan/edit/execute");
+        helpGroup("按键");
+        helpRow("Esc", "取消任务但保留会话；输入时清空草稿；连按两次回退");
+        helpRow("Tab", "补全斜杠命令及参数");
+        helpRow("Shift+Tab", "切换审核模式，保留草稿（备用 Alt+M）");
+        helpRow("Ctrl+C", "中断并退出，保留已保存的记录");
+        helpRow("/help", "显示帮助");
+        helpRow("/exit", "退出");
         out.println();
-        out.println("  示例：分析当前项目，先查看目录和 README，再说明启动方式。");
-        out.println("  请输入编程任务。任务会自动保存。输入 /exit 或按 Ctrl+C 退出。");
-        out.println(saved ? "  继续会话：ylc resume " + safe(session) : "  尚未保存任何任务。请先提交任务，再继续此会话。");
+        out.println("  " + style("90", saved ? "继续会话：ylc resume " + safe(session)
+                : "尚未保存任何任务。请先提交任务，再继续此会话。"));
         out.println();
         out.flush();
+    }
+
+    private void helpGroup(String title) {
+        out.println("  " + style("1", title));
+    }
+
+    private void helpRow(String key, String description) {
+        int width = key.codePoints().map(code -> code < 128 ? 1 : 2).sum();
+        out.println("    " + style("36", key) + " ".repeat(Math.max(2, 12 - width)) + style("90", description));
     }
 
     void logs(Path directory, java.util.List<Path> entries, Boolean enabled) {
@@ -268,7 +283,9 @@ final class TerminalUi implements AutoCloseable {
         field(out, "工作区", safe(workspace.toString()));
         field(out, "会话", safe(session) + (saved ? "（已保存）" : "（尚未提交任务）"));
         field(out, "联网", webEnabled ? "已开启 · 搜索与网页读取" : "已关闭");
-        field(out, "审核模式", approvalMode + " · Shift+Tab / /approval 切换 review/manual");
+        field(out, "审核模式", "allow-all".equals(approvalMode)
+                ? style("1;31", "allow-all（完全访问：shell 命令不经审核直接执行）")
+                : approvalMode + " · Shift+Tab / /approval 切换 auto/manual");
         if (saved) out.println("  继续会话：ylc resume " + safe(session));
         section(out, "进程累计");
         usage(out, process);
@@ -312,7 +329,7 @@ final class TerminalUi implements AutoCloseable {
         if (!showProgress) return;
         progress();
         step++;
-        err.printf("  %s %s%n", style("90", "●"),
+        err.printf("  %s %s%n", style("35", "✻"),
                 style("90", iteration == 1 ? "正在思考…" : "整理结果…（第 " + iteration + " 次请求）"));
         err.flush();
         refreshBottom();
@@ -343,16 +360,21 @@ final class TerminalUi implements AutoCloseable {
                 // 参数由工具验证；展示层不回显可能包含秘密的原始参数或异常。
             }
         }
-        err.printf("  %s %s%s%n", style("90", "●"), style("36", label),
-                path.isEmpty() ? "" : "  " + style("90", brief(path, 50)));
+        err.printf("  %s %s%s%n", style("32", "●"), style("1", label),
+                path.isEmpty() ? "" : style("90", "(" + brief(path, 60) + ")"));
         err.flush();
         refreshBottom();
+    }
+
+    /** 工具结果、审核说明挂在上一行工具调用下方，与调用本身区分开。 */
+    private String hang(String text) {
+        return "    " + style("90", "⎿") + "  " + text;
     }
 
     synchronized void review(String notice) {
         if (!showProgress) return;
         progress();
-        err.println("    " + style("90", safe(notice)));
+        err.println(hang(style("90", safe(notice))));
         err.flush();
         refreshBottom();
     }
@@ -362,8 +384,8 @@ final class TerminalUi implements AutoCloseable {
         beforeOutput();
         String reason = detail == null ? "" : detail;
         if (reason.startsWith("工具失败：")) reason = reason.substring("工具失败：".length());
-        err.println("    " + style("33", "工具未完成：" + safe(name)
-                + (reason.isBlank() ? "" : "；原因：" + safe(reason)) + "；正在把错误交给模型处理。"));
+        err.println(hang(style("31", "工具未完成：" + safe(name)
+                + (reason.isBlank() ? "" : "；原因：" + safe(reason)) + "；正在把错误交给模型处理。")));
         err.flush();
         refreshBottom();
     }
@@ -375,7 +397,7 @@ final class TerminalUi implements AutoCloseable {
             err.flush();
         }
         out.println();
-        out.println("  " + style("1;35", "◆ YLCoder") + "  " + style("90", "────────────────────"));
+        out.println("  " + style("1;35", "◆ YLCoder"));
         out.println();
         out.flush();
         answerStarted = true;
@@ -399,7 +421,12 @@ final class TerminalUi implements AutoCloseable {
             String input = compactAmount(task.total().inputTokens(), task.inputReportedRequests(), task.requests());
             String output = compactAmount(task.total().outputTokens(), task.outputReportedRequests(), task.requests());
             String rate = cacheRate(task, true);
-            out.println("  " + style("90", status + " · ↑" + input + " ↓" + output + " · 缓存 " + rate + " · "
+            String mark = switch (result.status()) {
+                case COMPLETED -> style("32", "✓");
+                case FAILED -> style("31", "✗");
+                default -> style("33", "!");
+            };
+            out.println("  " + mark + " " + style("90", status + " · ↑" + input + " ↓" + output + " · 缓存 " + rate + " · "
                     + String.format(Locale.ROOT, "%.1f 秒", elapsedSeconds)));
             out.println();
             out.flush();
@@ -425,7 +452,7 @@ final class TerminalUi implements AutoCloseable {
                 "  本轮  输入 token " + compactAmount(currentTask.total().inputTokens(), currentTask.inputReportedRequests(), currentTask.requests())
                         + " · 输出 token " + compactAmount(currentTask.total().outputTokens(), currentTask.outputReportedRequests(), currentTask.requests()),
                 "  缓存 token " + cached + " · 缓存命中率 " + rate,
-                "  ● " + activity + " · 权限 " + approvalMode + " · 联网" + (webEnabled ? "开" : "关") + " · " + mainRequests + "次主模型/" + currentReview.requests() + "次审核 · "
+                "  ● " + activity + " · 权限 " + ("allow-all".equals(approvalMode) ? "allow-all（完全访问）" : approvalMode) + " · 联网" + (webEnabled ? "开" : "关") + " · " + mainRequests + "次主模型/" + currentReview.requests() + "次审核 · "
                         + (tools == 0 ? "未调用工具" : tools + "次工具") + String.format(Locale.ROOT, " · %.1f 秒", seconds) + review);
     }
 

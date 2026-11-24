@@ -77,7 +77,9 @@ public final class HarnessCli implements Callable<Integer> {
     @Option(names = "--token-counter", scope = CommandLine.ScopeType.INHERIT, description = "本地输入计数器：utf16（默认）、cl100k 或 o200k。厂商计费方式可能不同。") String tokenCounter;
     @Option(names = "--allow-commands", scope = CommandLine.ScopeType.INHERIT, description = "批准所有 shell 命令；命令拥有当前用户的操作系统权限。") boolean allowCommands;
     @Option(names = "--no-auto-review", scope = CommandLine.ScopeType.INHERIT, description = "关闭低风险命令的审核子 agent，改为手动确认。") boolean noAutoReview;
-    @Option(names = "--approval-mode", scope = CommandLine.ScopeType.INHERIT, description = "命令权限模式：review（默认）、manual、allow-all。") String approvalMode;
+    @Option(names = "--approval-mode", scope = CommandLine.ScopeType.INHERIT, description = "命令权限模式：auto（默认，旧名 review）、manual、allow-all。") String approvalMode;
+    @Option(names = "--dangerously-skip-permissions", scope = CommandLine.ScopeType.INHERIT, description = "危险：等同 --approval-mode allow-all，所有 shell 命令不经审核直接执行；仅建议在隔离环境使用。") boolean dangerouslySkipPermissions;
+    @Option(names = "--allow-dangerously-skip-permissions", scope = CommandLine.ScopeType.INHERIT, description = "允许在交互模式中用 Shift+Tab 或 /approval 切换到 allow-all，但不默认进入。") boolean allowDangerouslySkipPermissions;
     @Option(names = "--allow-mcp-tools", scope = CommandLine.ScopeType.INHERIT, description = "批准外部 MCP 工具；此权限独立于 shell 命令权限。") boolean allowMcpTools;
     @Option(names = "--json", scope = CommandLine.ScopeType.INHERIT, description = "以 JSON 输出最终运行结果。") boolean json;
     @Option(names = {"-q", "--quiet"}, scope = CommandLine.ScopeType.INHERIT, description = "隐藏进度事件。") boolean quiet;
@@ -168,6 +170,11 @@ public final class HarnessCli implements Callable<Integer> {
 
     private Integer interactive(Runtime runtime) throws Exception {
         interactiveMode = true;
+        if (commandMode(runtime.config).equals("allow-all") && !dangerouslySkipPermissions && !confirmAllowAll()) {
+            runtime.close();
+            err().println("  未确认 allow-all，已退出。可改用 --approval-mode auto 或 manual。");
+            return 1;
+        }
         String id = runtime.store.newId();
         InteractiveSession current;
         try { current = new InteractiveSession(runtime, id, runtime.store.lock(id)); }
@@ -418,12 +425,17 @@ public final class HarnessCli implements Callable<Integer> {
                 }
                 if (command[0].equals("/approval")) {
                     if (command.length == 1) toggleApprovalMode(current.runtime.config);
-                    else if (java.util.Set.of("review", "manual").contains(command[1])
-                            && !effectiveCommandMode(current.runtime.config).equals("allow-all")) {
-                        interactiveApprovalMode = command[1];
+                    else if (command[1].equals("allow-all") && allowDangerouslySkipPermissions) {
+                        interactiveApprovalMode = enterAllowAll() ? "allow-all" : "auto";
                         ui().approval(interactiveApprovalMode);
                         out().println("  命令审核模式：" + interactiveApprovalMode + "；仅对当前交互进程生效。");
-                    } else out().println("  用法：/approval 切换 review/manual；/approval review 或 /approval manual 指定模式。allow-all 需用启动参数显式选择。");
+                    }
+                    else if (java.util.Set.of("auto", "review", "manual").contains(command[1])
+                            && (allowDangerouslySkipPermissions || !effectiveCommandMode(current.runtime.config).equals("allow-all"))) {
+                        interactiveApprovalMode = HarnessConfig.Permissions.normalizeMode(command[1]);
+                        ui().approval(interactiveApprovalMode);
+                        out().println("  命令审核模式：" + interactiveApprovalMode + "；仅对当前交互进程生效。");
+                    } else out().println("  用法：/approval 切换 auto/manual；/approval auto 或 /approval manual 指定模式。allow-all 需用启动参数显式选择。");
                     continue;
                 }
                 if (command[0].equals("/resume")) {
@@ -553,8 +565,11 @@ public final class HarnessCli implements Callable<Integer> {
         Path cwd = Path.of("").toAbsolutePath().normalize();
         // 启动目录就是默认工作区；旧配置中的 workspace 不能把操作重定向到其他项目。
         Path root = workspace == null ? cwd : cwd.resolve(workspace).normalize();
+        projectInstructions = ProjectInstructions.load(root);
         HarnessConfig config = ConfigLoader.load(root, configFile == null ? null : cwd.resolve(configFile), trustProjectConfig);
-        commandMode(config); // 在创建模型或 MCP 连接前验证命令行权限模式。
+        // 在创建模型或 MCP 连接前验证命令行权限模式。
+        if (commandMode(config).equals("allow-all") && ConfigLoader.userDisablesAllowAll())
+            throw new IllegalArgumentException("用户配置已设置 permissions.disable-allow-all: true，禁止使用 allow-all；请改用 --approval-mode auto 或 manual");
         if (!Files.isDirectory(root)) throw new IllegalArgumentException("工作区不存在：" + root);
         SessionStore store = existingStore == null ? new SessionStore(root) : existingStore;
         SessionStore.Session saved = resumeId == null ? null : store.load(resumeId);
@@ -698,14 +713,32 @@ public final class HarnessCli implements Callable<Integer> {
         var workspaceRegistry = registry;
         var contextTools = new ArrayList<dev.codeharness.core.tool.Tool>(workspaceRegistry.definitions().stream().map(def -> workspaceRegistry.find(def.name()).orElseThrow()).toList());
         contextTools.add(archive.readerTool()); contextTools.add(historySearch);
+        var parentAgent = new java.util.concurrent.atomic.AtomicReference<CodeAgent>();
+        var delegateObserver = new dev.codeharness.cli.tools.DelegateTask.Observer() {
+                    @Override public void onStart(String description) {
+                        if (!quiet && !json) ui().review("子任务开始：" + description);
+                    }
+                    @Override public void onToolStart(String description, ToolCall call) {
+                        if (!quiet && !json) ui().review("[" + description + "] " + call.name());
+                    }
+                    @Override public void onFinish(String description, AgentResult result) {
+                        if (!quiet && !json) ui().review("子任务结束：" + description + " · " + result.status().name()
+                                + " · " + result.iterations() + " 次请求 · 输入 " + result.usage().inputTokens()
+                                + " / 输出 " + result.usage().outputTokens() + " token");
+                    }
+                };
+        contextTools.add(new dev.codeharness.cli.tools.DelegateTask(parentAgent::get, () -> options, delegateObserver));
+        contextTools.add(dev.codeharness.cli.tools.DelegateTask.writable(parentAgent::get, () -> options, delegateObserver));
         registry = new dev.codeharness.core.tool.ToolRegistry(contextTools);
         WebTools web = !noWeb && config.web.enabled ? new WebTools(config.web) : null;
         McpTools mcp = null;
         try {
             if (web != null) registry = web.combine(registry);
             mcp = McpTools.open(root, config.mcp, 4_000_000, request -> approveMcp(request, config));
-            return new Runtime(config, providerConfig, root, store, new CodeAgent(chatModel, mcp.combine(registry),
-                    new ContextCompactor(inputCounter), contextPolicy, summarizer, archive), options, saved, mcp, reviewer, web, trace, historySearch);
+            var agent = new CodeAgent(chatModel, mcp.combine(registry),
+                    new ContextCompactor(inputCounter), contextPolicy, summarizer, archive);
+            parentAgent.set(agent);
+            return new Runtime(config, providerConfig, root, store, agent, options, saved, mcp, reviewer, web, trace, historySearch);
         } catch (Exception failure) {
             if (mcp != null) mcp.close();
             if (web != null) web.close();
@@ -732,7 +765,13 @@ public final class HarnessCli implements Callable<Integer> {
         return selected;
     }
 
+    private static volatile String projectInstructions = "";
+
     private static String systemPrompt() {
+        return basePrompt() + projectInstructions;
+    }
+
+    private static String basePrompt() {
         return PROMPT + "\n当前本地日期：" + java.time.LocalDate.now() + "；时区：" + java.time.ZoneId.systemDefault() + "。\n";
     }
 
@@ -748,7 +787,7 @@ public final class HarnessCli implements Callable<Integer> {
         String mode = effectiveCommandMode(config);
         if (mode.equals("allow-all")) return CommandApproval.Decision.shell();
         String reason = "";
-        if (mode.equals("review") && reviewer != null) {
+        if (mode.equals("auto") && reviewer != null) {
             CommandReview.Outcome outcome = reviewer.review(request);
             if (outcome.approved()) return outcome.decision();
             reason = "自动审核：" + outcome.reason() + "\n";
@@ -759,10 +798,16 @@ public final class HarnessCli implements Callable<Integer> {
     }
 
     private String commandMode(HarnessConfig config) {
+        if (dangerouslySkipPermissions) {
+            if (approvalMode != null && !"allow-all".equals(HarnessConfig.Permissions.normalizeMode(approvalMode)))
+                throw new IllegalArgumentException("--dangerously-skip-permissions 不能与其他 --approval-mode 同时使用");
+            return "allow-all";
+        }
         if (approvalMode != null) {
-            if (!java.util.Set.of("manual", "review", "allow-all").contains(approvalMode))
-                throw new IllegalArgumentException("--approval-mode 必须是 manual、review 或 allow-all");
-            return approvalMode;
+            String selected = HarnessConfig.Permissions.normalizeMode(approvalMode);
+            if (selected == null)
+                throw new IllegalArgumentException("--approval-mode 必须是 auto、manual 或 allow-all");
+            return selected;
         }
         if (allowCommands) return "allow-all";
         if (noAutoReview) return "manual";
@@ -775,20 +820,77 @@ public final class HarnessCli implements Callable<Integer> {
 
     private void toggleApprovalMode(HarnessConfig config) {
         String current = effectiveCommandMode(config);
-        if (current.equals("allow-all")) {
-            out().println("  当前为 allow-all；请使用 ylc --approval-mode review 或 manual 重新启动后切换审核模式。");
+        if (current.equals("allow-all") && !allowDangerouslySkipPermissions) {
+            out().println("  当前为 allow-all；请使用 ylc --approval-mode auto 或 manual 重新启动后切换审核模式。");
             return;
         }
-        interactiveApprovalMode = current.equals("review") ? "manual" : "review";
+        String next = switch (current) {
+            case "auto" -> "manual";
+            case "manual" -> allowDangerouslySkipPermissions ? "allow-all" : "auto";
+            default -> "auto";
+        };
+        if (next.equals("allow-all") && !enterAllowAll()) next = "auto";
+        interactiveApprovalMode = next;
         ui().approval(interactiveApprovalMode);
+        if (interactiveApprovalMode.equals("allow-all")) {
+            out().println("  命令审核模式已切换为 allow-all（完全访问）：shell 命令不经审核直接执行；仅对当前交互进程生效。");
+            return;
+        }
         out().println("  命令审核模式已切换为 " + interactiveApprovalMode
-                + (interactiveApprovalMode.equals("review") ? "：安全快速路径优先，其余候选交审核模型；失败时人工确认。" : "：shell 命令逐项人工确认。")
+                + (interactiveApprovalMode.equals("auto") ? "：安全快速路径优先，其余候选交审核模型；失败时人工确认。" : "：shell 命令逐项人工确认。")
                 + " 此设置仅对当前交互进程生效；Shift+Tab 或 /approval 可切换，当前输入草稿已保留。");
     }
 
     private boolean approveMcp(String request, HarnessConfig config) {
         if (allowMcpTools || config.permissions.allowMcpTools) return true;
         return confirm(request, "允许调用外部 MCP 工具吗？[y/N] ");
+    }
+
+    /** 交互模式进入 allow-all 前要求输入 yes；非终端输入一律拒绝。 */
+    private boolean confirmAllowAll() {
+        if (allowAllConfirmed()) return true;
+        if (!input().isTerminal()) return false;
+        err().println("  警告：allow-all 模式下所有 shell 命令不经审核直接执行，拥有当前用户的全部文件系统和网络权限。");
+        err().println("  文件工具仍限制在工作区内，MCP 仍需单独授权。仅建议在隔离或可随时恢复的环境中使用。");
+        err().print("  输入 yes 确认进入 allow-all：");
+        err().flush();
+        String answer;
+        try { answer = input().readLine(); } catch (Exception failure) { return false; }
+        boolean accepted = answer != null && answer.strip().equalsIgnoreCase("yes");
+        if (accepted) rememberAllowAllConfirmed();
+        return accepted;
+    }
+
+    /** 交互中切换到 allow-all：遵守用户配置的禁用开关，并要求确认。 */
+    private boolean enterAllowAll() {
+        if (ConfigLoader.userDisablesAllowAll()) {
+            out().println("  用户配置已设置 permissions.disable-allow-all: true，不能切换到 allow-all。");
+            return false;
+        }
+        if (allowAllConfirmed()) return true;
+        boolean accepted = confirm("警告：allow-all 模式下所有 shell 命令不经审核直接执行，拥有当前用户的全部文件系统和网络权限。",
+                "输入 yes 确认进入 allow-all：");
+        if (accepted) rememberAllowAllConfirmed();
+        else out().println("  未确认 allow-all，已切换为 auto。");
+        return accepted;
+    }
+
+    static Path allowAllMarker() {
+        return Path.of(System.getProperty("user.home"), ".code-harness", "allow-all-confirmed");
+    }
+
+    private static boolean allowAllConfirmed() {
+        return java.nio.file.Files.isRegularFile(allowAllMarker(), java.nio.file.LinkOption.NOFOLLOW_LINKS);
+    }
+
+    /** 记录已确认过 allow-all 风险；写入失败只影响下次是否再询问。 */
+    private static void rememberAllowAllConfirmed() {
+        try {
+            java.nio.file.Files.createDirectories(allowAllMarker().getParent());
+            java.nio.file.Files.writeString(allowAllMarker(), "confirmed\n");
+        } catch (java.io.IOException | RuntimeException ignored) {
+            // 无法写入时下次重新确认，不影响本次运行。
+        }
     }
 
     private boolean confirm(String request, String prompt) {
@@ -945,6 +1047,8 @@ public final class HarnessCli implements Callable<Integer> {
                     "answer", result.finalAnswer(), "error", result.error(), "iterations", result.iterations(),
                     "usage", result.usage(), "agentUsage", lastAgentUsage, "review", lastReviewStats,
                     "elapsedMs", result.elapsed().toMillis()));
+            // "auto" is the new name; "review" is kept for existing script compatibility.
+            payload.put("auto", lastReviewStats);
             payload.put("provider", activeProvider);
             payload.put("model", activeModel);
             payload.put("intent", Map.of("mode", lastIntent.id(), "reason", lastIntent.reason()));

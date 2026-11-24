@@ -69,6 +69,8 @@ public final class HarnessConfig {
         /** 未指定时保留旧配置语义；显式模式优先于旧布尔开关。 */
         public String mode;
         @JsonProperty("allow-commands") public boolean allowCommands = false;
+        /** 只在用户配置 ~/.code-harness/config.yaml 中生效；项目配置不能借此自我放权或解除限制。 */
+        @JsonProperty("disable-allow-all") public boolean disableAllowAll = false;
         @JsonProperty("allow-mcp-tools") public boolean allowMcpTools = false;
         @JsonProperty("auto-review") public boolean autoReview = true;
         @JsonProperty("review-timeout-seconds") public int reviewTimeoutSeconds = 10;
@@ -76,11 +78,20 @@ public final class HarnessConfig {
         public Reviewer reviewer = new Reviewer();
 
         public String effectiveMode() {
-            if (mode == null) return allowCommands ? "allow-all" : autoReview ? "review" : "manual";
-            String selected = mode.trim().toLowerCase(java.util.Locale.ROOT);
-            return switch (selected) {
-                case "review", "manual", "allow-all" -> selected;
-                default -> throw new IllegalArgumentException("permissions.mode 必须是 review、manual 或 allow-all");
+            if (mode == null) return allowCommands ? "allow-all" : autoReview ? "auto" : "manual";
+            String selected = normalizeMode(mode);
+            if (selected == null) throw new IllegalArgumentException("permissions.mode 必须是 auto、manual 或 allow-all");
+            return selected;
+        }
+
+        /** 旧值 review 是 auto 的兼容别名；未知值返回 null。 */
+        public static String normalizeMode(String value) {
+            if (value == null) return null;
+            return switch (value.trim().toLowerCase(java.util.Locale.ROOT)) {
+                case "auto", "review" -> "auto";
+                case "manual" -> "manual";
+                case "allow-all" -> "allow-all";
+                default -> null;
             };
         }
     }

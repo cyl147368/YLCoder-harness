@@ -270,7 +270,8 @@ final class ReadOnlyCommandGate {
             List<String> planned;
             if (words.getFirst().equals("git")) {
                 List<String> operation = ReadOnlyQuery.git(ReviewableShell.join(words));
-                if (operation == null && classify) operation = words.subList(1, words.size());
+                if (operation == null && classify)
+                    operation = ReviewableShell.classifierGitOperation(words.subList(1, words.size()));
                 GitPlan git = operation == null ? null : gitArguments(workspace, operation);
                 if (git == null) throw new GitStatusConfig.Ineligible(
                         "只读命令链中的 Git 阶段未通过仓库边界检查，需要人工确认");

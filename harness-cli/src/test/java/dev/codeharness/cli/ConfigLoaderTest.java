@@ -20,7 +20,7 @@ class ConfigLoaderTest {
         assertEquals(3000, config.agent.maxOutputTokens);
         assertFalse(config.permissions.allowCommands);
         assertTrue(config.permissions.autoReview);
-        assertEquals("review", config.permissions.effectiveMode());
+        assertEquals("auto", config.permissions.effectiveMode());
         assertNotNull(config.permissions.reviewer);
         assertEquals(10, config.permissions.reviewTimeoutSeconds);
         assertEquals(8, config.permissions.maxAutoReviews);
@@ -198,7 +198,7 @@ class ConfigLoaderTest {
         try {
             System.setProperty("user.home", temporary.resolve("reviewer-home").toString());
             HarnessConfig ignored = ConfigLoader.load(repo, null);
-            assertEquals("review", ignored.permissions.effectiveMode());
+            assertEquals("auto", ignored.permissions.effectiveMode());
             assertNull(ignored.permissions.reviewer.baseUrl);
             assertEquals("allow-all", ConfigLoader.load(repo, null, true).permissions.effectiveMode());
             assertEquals("https://review.example/v1", ConfigLoader.load(repo, file).permissions.reviewer.baseUrl);
@@ -230,7 +230,7 @@ class ConfigLoaderTest {
     @Test void 未指定模式继续解析旧权限开关() throws Exception {
         Path file = temporary.resolve("legacy-review.yaml");
         Files.writeString(file, "permissions: {}\n");
-        assertEquals("review", ConfigLoader.load(temporary, file).permissions.effectiveMode());
+        assertEquals("auto", ConfigLoader.load(temporary, file).permissions.effectiveMode());
         Files.writeString(file, "permissions:\n  auto-review: false\n");
         assertEquals("manual", ConfigLoader.load(temporary, file).permissions.effectiveMode());
         Files.writeString(file, "permissions:\n  allow-commands: true\n  auto-review: false\n");

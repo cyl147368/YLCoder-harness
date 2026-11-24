@@ -74,4 +74,59 @@ class ReviewableShellTest {
         assertFalse(ReviewableShell.reviewCandidate("git push origin main"));
         assertFalse(ReviewableShell.reviewCandidate("rg --pre ./helper pattern ."));
     }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "sort README.md",
+            "uniq -c README.md",
+            "sed -n 1,20p README.md",
+            "sed -e s/foo/bar/g README.md",
+            "find src -name Test.java",
+            "cat README.md",
+            "git log --stat -3"
+    })
+    void classifierStillAcceptsReadOnlyForms(String command) {
+        assertTrue(ReviewableShell.reviewCandidate(command));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "tar -cf out.tar src",
+            "xcopy src backup",
+            "robocopy src backup",
+            "certutil -urlcache -f https://example.com/a a",
+            "schtasks /create",
+            "wmic process call create calc",
+            "mshta https://example.com/a.hta",
+            "rundll32 shell32.dll,Control_RunDLL",
+            "msiexec /i package.msi",
+            "start calc",
+            "wsl ls",
+            "sed -n \"1e calc\" README.md",
+            "sed -n \"w out.txt\" README.md",
+            "sed s/a/b/w README.md",
+            "sed s/a/b/e README.md",
+            "sed -f script.sed README.md",
+            "sed \"1r other.txt\" README.md",
+            "sed -i.bak s/a/b/ README.md",
+            "sort -o out.txt README.md",
+            "sort --compress-program=calc README.md",
+            "uniq README.md out.txt",
+            "find src -fprint0 out.txt",
+            "tree -o out.txt",
+            "file -C -m magic",
+            "git cat-file --filters HEAD:README.md"
+    })
+    void classifierRejectsUnlistedProgramsAndWritingOrExecutingArguments(String command) {
+        assertFalse(ReviewableShell.reviewCandidate(command));
+    }
+
+    @Test
+    void classifierGitTextQueriesDisableTextconvAndExternalDiff() {
+        assertEquals(List.of("log", "--no-ext-diff", "--no-textconv", "-p"),
+                ReviewableShell.classifierGitOperation(List.of("log", "-p")));
+        assertEquals(List.of("blame", "--no-textconv", "README.md"),
+                ReviewableShell.classifierGitOperation(List.of("blame", "README.md")));
+        assertEquals(List.of("ls-files"), ReviewableShell.classifierGitOperation(List.of("ls-files")));
+    }
 }

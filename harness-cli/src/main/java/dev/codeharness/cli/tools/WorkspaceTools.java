@@ -453,6 +453,7 @@ public final class WorkspaceTools {
             if (build != null) build.revalidate();
             if (Thread.currentThread().isInterrupted()) throw new InterruptedException("命令在复核后被中断，尚未启动");
             Process process = builder.start();
+            WindowsJobSandbox job = WindowsJobSandbox.attach(process);
             BoundedOutput output = new BoundedOutput();
             Thread drain = Thread.ofVirtual().name("harness-command-output").unstarted(() -> {
                 try (var reader = new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8)) {
@@ -483,6 +484,7 @@ public final class WorkspaceTools {
                 if (!finished && !cleanupStarted) CommandProcessCleanup.stop(process);
                 else if (finished) CommandProcessCleanup.closePipes(process);
                 drain.interrupt();
+                job.close();
             }
             String status = finished ? "退出码：" + process.exitValue() : "命令超时，已等待 " + commandTimeout.toMillis() + " ms";
             return preview("run_command", output, status + "\n");

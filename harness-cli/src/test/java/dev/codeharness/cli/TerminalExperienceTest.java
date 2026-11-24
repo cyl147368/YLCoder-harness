@@ -73,7 +73,7 @@ class TerminalExperienceTest {
         assertFalse(err.toString().contains("private-content"));
         assertFalse(err.toString().contains("private-command"));
         assertFalse(err.toString().contains("执行进度"), "移除了执行进度标题");
-        assertTrue(err.toString().matches("(?s).*● 写入文件  src/[^\\r\\n]*\\R  ● 执行命令.*"),
+        assertTrue(err.toString().matches("(?s).*● 写入文件\\(src/[^\\r\\n]*\\)\\R  ● 执行命令.*"),
                 "工具与路径同处一行，不能回显命令或文件正文");
     }
 
